@@ -1,26 +1,929 @@
 @import "tailwindcss";
 
+/*
+ * Vamo Ops Radar — a multi-part consignment note.
+ *
+ * Continuous fanfold stock, punched tractor-feed edge, engraved pre-printed captions,
+ * data struck in with a carbon ribbon, severity in rule weight and copy tint, and
+ * disposition recorded with a rubber stamp. See DESIGN.md.
+ */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Paper */
+  --stock: #f2efe6;
+  --stock-sheet: #faf8f2;
+  --copy-canary: #f4e8be;
+  --copy-pink: #f3d9d5;
+  --copy-blue: #dfe7ee;
+
+  /* Ink */
+  --ink: #1c1a17;
+  --ink-faded: #5e5850;
+  --ink-ghost: #666054;
+
+  /* Rules */
+  --rule: #c9c2b2;
+  --rule-heavy: #8a8375;
+
+  /* The two ink pads */
+  --stamp-red: #b4232a;
+  --stamp-blue: #1f4e79;
+
+  --gutter: 26px;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-stock: var(--stock);
+  --color-ink: var(--ink);
+  --font-sans: var(--font-archivo);
+  --font-narrow: var(--font-archivo-narrow);
+  --font-mono: var(--font-courier);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--stock);
+  color: var(--ink);
+  font-family: var(--font-archivo), system-ui, sans-serif;
+  font-size: 13px;
+  line-height: 1.35;
+  -webkit-font-smoothing: antialiased;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ───────────────────────── Engraved captions ───────────────────────── */
+
+.cap {
+  display: block;
+  font-family: var(--font-archivo-narrow), system-ui, sans-serif;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-faded);
+}
+
+.mono {
+  font-family: var(--font-courier), ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ───────────────────────── The sheet ───────────────────────── */
+
+.sheet {
+  min-height: 100dvh;
+  display: grid;
+  grid-template-columns: var(--gutter) 1fr;
+}
+
+/*
+ * The tractor-feed edge. Punched holes on a ruled margin: the one piece of chrome
+ * that tells you what this document is before you have read a word of it.
+ */
+.perforation {
+  border-right: 1px solid var(--rule);
+  background-image: radial-gradient(
+    circle at center,
+    var(--ink-ghost) 0 1.5px,
+    color-mix(in srgb, var(--stock) 80%, #fff) 1.6px 3.1px,
+    transparent 3.2px
+  );
+  background-size: 100% 22px;
+  background-position: center 11px;
+  background-repeat: repeat-y;
+  opacity: 0.38;
+}
+
+.column {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ───────────────────────── Masthead ───────────────────────── */
+
+.masthead {
+  border-bottom: 2px solid var(--ink);
+  padding: 10px 14px 0;
+}
+
+.masthead__title {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding-bottom: 8px;
+}
+
+.masthead__mark {
+  font-family: var(--font-archivo-narrow), sans-serif;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.masthead__doc {
+  font-family: var(--font-archivo-narrow), sans-serif;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.17em;
+  text-transform: uppercase;
+  color: var(--ink-faded);
+}
+
+.masthead__synthetic {
+  margin-left: auto;
+  font-family: var(--font-courier), monospace;
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  color: var(--stamp-red);
+  border: 1px solid var(--stamp-red);
+  padding: 1px 5px;
+  opacity: 0.8;
+}
+
+/* Operating figures, as boxed fields inside the form grid — not as cards. */
+.figures {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
+  border-top: 1px solid var(--rule);
+}
+
+.figure {
+  padding: 6px 10px 7px;
+  border-right: 1px solid var(--rule);
+  min-width: 0;
+}
+
+.figure:last-child {
+  border-right: 0;
+}
+
+.figure__value {
+  font-family: var(--font-courier), monospace;
+  font-size: 21px;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.figure__unit {
+  font-family: var(--font-archivo-narrow), sans-serif;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-faded);
+}
+
+.figure--alarm .figure__value {
+  color: var(--stamp-red);
+}
+
+.figure__note {
+  font-size: 10.5px;
+  color: var(--ink-faded);
+  margin-top: 1px;
+}
+
+/* ───────────────────────── Command rule ───────────────────────── */
+
+.command {
+  border-bottom: 1px solid var(--rule);
+  background: var(--stock-sheet);
+}
+
+.command__line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px;
+}
+
+.command__caret {
+  font-family: var(--font-courier), monospace;
+  font-weight: 700;
+  color: var(--stamp-red);
+  user-select: none;
+}
+
+.command__input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font-family: var(--font-courier), monospace;
+  font-size: 13.5px;
+  letter-spacing: 0.01em;
+  padding: 0;
+}
+
+.command__input::placeholder {
+  color: var(--ink-faded);
+}
+
+.command__input:focus {
+  outline: none;
+}
+
+.command__hint {
+  font-family: var(--font-archivo-narrow), sans-serif;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--ink-faded);
+  white-space: nowrap;
+}
+
+/* The delta strip: exactly what pressing Enter would change. */
+.delta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 14px 6px;
+  border-top: 1px dashed var(--rule);
+  background: color-mix(in srgb, var(--copy-canary) 50%, var(--stock-sheet));
+  font-size: 11.5px;
+}
+
+.delta--error {
+  background: color-mix(in srgb, var(--copy-pink) 60%, var(--stock-sheet));
+  color: color-mix(in srgb, var(--stamp-red) 70%, var(--ink));
+}
+
+.delta__verb {
+  font-family: var(--font-archivo-narrow), sans-serif;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  border: 1px solid currentColor;
+  padding: 1px 5px;
+}
+
+.delta__press {
+  margin-left: auto;
+  font-family: var(--font-archivo-narrow), sans-serif;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--ink-faded);
+  white-space: nowrap;
+}
+
+/* ───────────────────────── Column heads ───────────────────────── */
+
+.heads {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: var(--stock);
+  border-bottom: 1px solid var(--rule-heavy);
+  padding: 4px 14px 3px;
+}
+
+/* ───────────────────────── Manifest ───────────────────────── */
+
+.manifest {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  scrollbar-gutter: stable;
+}
+
+.block {
+  display: block;
+  width: 100%;
+  text-align: left;
+  position: relative;
+  border: 0;
+  border-bottom: 1px dashed var(--rule);
+  border-left: 3px double var(--rule);
+  background: var(--stock);
+  color: inherit;
+  font: inherit;
+  padding: 7px 14px 8px;
+  cursor: pointer;
+  transition: background 120ms linear;
+}
+
+.block:hover {
+  background: var(--stock-sheet);
+}
+
+.block[data-tier="critical"] {
+  background: var(--copy-pink);
+  border-left-color: var(--stamp-red);
+}
+
+.block[data-tier="high"] {
+  background: var(--copy-canary);
+  border-left-color: var(--rule-heavy);
+}
+
+.block[data-selected="true"] {
+  outline: 2px solid var(--stamp-red);
+  outline-offset: -2px;
+}
+
+.block:focus-visible {
+  outline: 2px solid var(--stamp-red);
+  outline-offset: -2px;
+}
+
+/* Spent paper: resolved and snoozed blocks keep their place but lose their ink. */
+.block[data-spent="true"] {
+  background: var(--copy-blue);
+  color: var(--ink-ghost);
+  border-left-color: var(--rule);
+}
+
+.block[data-spent="true"] .cap,
+.block[data-spent="true"] .figure__unit {
+  color: var(--ink-ghost);
+}
+
+/* Rehearsal: what the pending command would do to this block. */
+.block[data-rehearsing="true"] {
+  opacity: 0.55;
+}
+
+.fields {
+  display: grid;
+  grid-template-columns:
+    28px 50px minmax(92px, 0.8fr) minmax(144px, 1.6fr) minmax(100px, 1fr)
+    minmax(88px, 0.75fr) minmax(88px, 0.75fr) minmax(78px, 0.7fr) 74px;
+  gap: 0 10px;
+  align-items: start;
+}
+
+.field {
+  min-width: 0;
+}
+
+.field__val {
+  display: block;
+  font-size: 12.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.field__sub {
+  display: block;
+  font-size: 11px;
+  color: var(--ink-faded);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.block[data-spent="true"] .field__sub {
+  color: var(--ink-ghost);
+}
+
+.field--seq .field__val {
+  font-family: var(--font-courier), monospace;
+  font-size: 13px;
+  color: var(--ink-faded);
+  padding-top: 12px;
+}
+
+.field--risk .field__val {
+  font-family: var(--font-courier), monospace;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.03em;
+}
+
+.block[data-tier="critical"] .field--risk .field__val {
+  color: var(--stamp-red);
+}
+
+.slip {
+  color: var(--stamp-red);
+  font-weight: 700;
+}
+
+.block[data-spent="true"] .slip {
+  color: var(--ink-ghost);
+  font-weight: 400;
+}
+
+/* Signals: the row's own justification, with its arithmetic visible. */
+.signals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 4px;
+  margin-top: 6px;
+}
+
+.signal {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  border: 1px solid var(--rule-heavy);
+  padding: 0 4px 1px;
+  font-family: var(--font-archivo-narrow), sans-serif;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.signal__pts {
+  font-family: var(--font-courier), monospace;
+  font-size: 10px;
+  letter-spacing: 0;
+  color: var(--stamp-blue);
+}
+
+.signal--dominant {
+  border-color: var(--stamp-red);
+  color: var(--stamp-red);
+}
+
+.signal--dominant .signal__pts {
+  color: var(--stamp-red);
+}
+
+.block[data-spent="true"] .signal,
+.block[data-spent="true"] .signal__pts {
+  border-color: var(--rule);
+  color: var(--ink-ghost);
+}
+
+/* REMARKS: where the next move is written. */
+.remarks {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  margin-top: 5px;
+  padding-top: 4px;
+  border-top: 1px solid color-mix(in srgb, var(--rule) 70%, transparent);
+}
+
+.remarks__cap {
+  flex: none;
+}
+
+.remarks__text {
+  font-size: 12.5px;
+}
+
+.remarks__keys {
+  margin-left: auto;
+  flex: none;
+  font-family: var(--font-archivo-narrow), sans-serif;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-faded);
+  white-space: nowrap;
+}
+
+/* ───────────────────────── Stamps ───────────────────────── */
+
+.stamp {
+  display: inline-block;
+  font-family: var(--font-courier), monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  border: 2px solid currentColor;
+  padding: 1px 5px 2px;
+  transform: rotate(-2.2deg);
+  white-space: nowrap;
+}
+
+.stamp--critical {
+  color: var(--stamp-red);
+}
+
+.stamp--high {
+  color: color-mix(in srgb, var(--stamp-red) 55%, var(--ink));
+  border-style: solid;
+}
+
+.stamp--routine {
+  color: var(--stamp-blue);
+}
+
+.stamp--spent {
+  color: var(--ink-ghost);
+}
+
+/* A stamp hovering over the paper, not yet pressed. */
+.stamp--ghost {
+  opacity: 0.4;
+  border-style: dashed;
+}
+
+.block__stamp {
+  grid-column: 9;
+  justify-self: end;
+  padding-top: 9px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .stamp--pressed {
+    animation: press 140ms cubic-bezier(0.2, 0.8, 0.3, 1);
+  }
+}
+
+@keyframes press {
+  from {
+    transform: rotate(-2.2deg) scale(1.06);
+    opacity: 0.35;
+  }
+  to {
+    transform: rotate(-2.2deg) scale(1);
+    opacity: 1;
+  }
+}
+
+/* ───────────────────────── Carbon copy (detail sheet) ───────────────────────── */
+
+.carbon {
+  position: fixed;
+  inset: 0 0 0 auto;
+  width: min(480px, 100vw);
+  background: var(--stock-sheet);
+  border-left: 2px solid var(--ink);
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .carbon {
+    animation: slide-in 220ms ease-out;
+  }
+}
+
+@keyframes slide-in {
+  from {
+    transform: translateX(14px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.carbon__head {
+  padding: 10px 14px;
+  border-bottom: 2px solid var(--ink);
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.carbon__section {
+  padding: 9px 14px 11px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.carbon__grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px 10px;
+  margin-top: 5px;
+}
+
+/* The total box: the score, shown as the arithmetic an operator can check. */
+.tally {
+  margin-top: 6px;
+  border: 1px solid var(--rule-heavy);
+}
+
+.tally__row {
+  display: grid;
+  grid-template-columns: 1fr 44px;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.tally__row:last-child {
+  border-bottom: 0;
+}
+
+.tally__label {
+  font-size: 12px;
+}
+
+.tally__detail {
+  display: block;
+  font-size: 10.5px;
+  color: var(--ink-faded);
+}
+
+.tally__pts {
+  font-family: var(--font-courier), monospace;
+  font-size: 13px;
+  text-align: right;
+}
+
+.tally__row--total {
+  background: color-mix(in srgb, var(--copy-canary) 45%, var(--stock-sheet));
+  border-top: 2px solid var(--ink);
+}
+
+.tally__row--total .tally__label {
+  font-family: var(--font-archivo-narrow), sans-serif;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.tally__row--total .tally__pts {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.timeline {
+  margin-top: 6px;
+  border-left: 1px solid var(--rule-heavy);
+  padding-left: 9px;
+  display: grid;
+  gap: 6px;
+}
+
+.timeline__item {
+  display: grid;
+  grid-template-columns: 46px 1fr;
+  gap: 8px;
+  font-size: 11.5px;
+}
+
+.timeline__at {
+  font-family: var(--font-courier), monospace;
+  color: var(--ink-faded);
+}
+
+/* ───────────────────────── Controls ───────────────────────── */
+
+.keys {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 7px;
+}
+
+.key {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  border: 1px solid var(--rule-heavy);
+  background: var(--stock);
+  color: var(--ink);
+  font-family: var(--font-archivo-narrow), sans-serif;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 3px 7px 4px;
+  cursor: pointer;
+}
+
+.key:hover {
+  background: var(--copy-canary);
+}
+
+.key:focus-visible {
+  outline: 2px solid var(--stamp-red);
+  outline-offset: 1px;
+}
+
+.key[aria-pressed="true"] {
+  background: var(--ink);
+  color: var(--stock);
+  border-color: var(--ink);
+}
+
+.key__glyph {
+  font-family: var(--font-courier), monospace;
+  font-size: 10px;
+  letter-spacing: 0;
+  color: var(--stamp-red);
+}
+
+.key[aria-pressed="true"] .key__glyph {
+  color: var(--copy-canary);
+}
+
+.key:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.draft {
+  margin-top: 7px;
+  border: 1px solid var(--rule-heavy);
+  background: var(--stock);
+  padding: 8px 9px;
+  font-size: 12.5px;
+  white-space: pre-wrap;
+  min-height: 62px;
+}
+
+.draft--waiting {
+  color: var(--ink-faded);
+  font-style: italic;
+}
+
+.draft__source {
+  margin-top: 5px;
+  font-family: var(--font-archivo-narrow), sans-serif;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--ink-faded);
+}
+
+/* ───────────────────────── Empty state ───────────────────────── */
+
+.empty {
+  padding: 40px 14px;
+  max-width: 420px;
+}
+
+.empty__stamp {
+  font-family: var(--font-courier), monospace;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.17em;
+  text-transform: uppercase;
+  color: var(--stamp-blue);
+  border: 2px solid var(--stamp-blue);
+  display: inline-block;
+  padding: 4px 10px 5px;
+  transform: rotate(-2.2deg);
+}
+
+.empty__text {
+  margin-top: 14px;
+  color: var(--ink-faded);
+  font-size: 12.5px;
+}
+
+/* ───────────────────────── Shortcut sheet ───────────────────────── */
+
+.scrim {
+  position: fixed;
+  inset: 0;
+  background: color-mix(in srgb, var(--ink) 34%, transparent);
+  z-index: 15;
+  border: 0;
+  padding: 0;
+  cursor: default;
+}
+
+.shortcuts {
+  position: fixed;
+  z-index: 25;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(430px, calc(100vw - 28px));
+  background: var(--stock-sheet);
+  border: 2px solid var(--ink);
+  padding: 13px 15px 15px;
+}
+
+.shortcuts__list {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  gap: 5px 10px;
+  margin-top: 9px;
+  font-size: 12px;
+}
+
+.shortcuts__key {
+  font-family: var(--font-courier), monospace;
+  font-weight: 700;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ───────────────────────── Narrow screens ───────────────────────── */
+
+@media (max-width: 860px) {
+  :root {
+    --gutter: 16px;
+  }
+
+  .fields {
+    grid-template-columns: 26px 46px minmax(0, 1fr);
+    gap: 2px 8px;
+  }
+
+  /* On a phone the block stops being a line and becomes a stacked form. */
+  /*
+   * On a phone the block stops being a line and becomes a stacked form — but with the
+   * caption beside its value rather than above it, or one incident fills the screen.
+   */
+  .field--consignment,
+  .field--consignee,
+  .field--shipper,
+  .field--window,
+  .field--projected,
+  .field--driver {
+    grid-column: 3 / 4;
+    display: grid;
+    grid-template-columns: 72px minmax(0, 1fr);
+    column-gap: 8px;
+    align-items: baseline;
+    padding: 1px 0;
+  }
+
+  .field--consignment .cap,
+  .field--consignee .cap,
+  .field--shipper .cap,
+  .field--window .cap,
+  .field--projected .cap,
+  .field--driver .cap {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .field--consignment .field__val,
+  .field--consignee .field__val,
+  .field--shipper .field__val,
+  .field--window .field__val,
+  .field--projected .field__val,
+  .field--driver .field__val {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .field--consignment .field__sub,
+  .field--consignee .field__sub,
+  .field--shipper .field__sub,
+  .field--window .field__sub,
+  .field--projected .field__sub,
+  .field--driver .field__sub {
+    grid-column: 2;
+    grid-row: 2;
+  }
+
+  .field--risk {
+    grid-row: 1;
+    grid-column: 2;
+  }
+
+  .field--seq .field__val,
+  .field--risk .field__val {
+    padding-top: 2px;
+  }
+
+  .block__stamp {
+    grid-column: 1 / 4;
+    justify-self: start;
+    padding-top: 7px;
+  }
+
+  .remarks__keys {
+    display: none;
+  }
+
+  .carbon {
+    width: 100vw;
+    border-left: 0;
+  }
 }
