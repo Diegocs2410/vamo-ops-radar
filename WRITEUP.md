@@ -1,7 +1,7 @@
 # Vamo Ops Radar — write-up
 
-**Repo:** <!-- paste the public GitHub URL here -->
-**Live:** <!-- paste the Vercel URL here -->
+**Repo:** https://github.com/Diegocs2410/vamo-ops-radar
+**Live:** https://vamo-ops-radar.vercel.app
 
 ## The problem I picked, and what I assumed
 
