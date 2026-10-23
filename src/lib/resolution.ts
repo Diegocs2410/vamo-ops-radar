@@ -60,7 +60,7 @@ export function resolutionFor(triaged: TriagedIssue): Resolution {
         action: "resend_route",
         title: `Resend ${routeCode} to ${driverCode} and confirm they can see it`,
         rationale:
-          "A driver who cannot see their route is not driving. Every minute here is the whole block of stops standing still, and the fix is usually one resend.",
+          "He can't start until this is sorted, and the whole block of stops is sitting still behind it. Usually it's one resend.",
         drafts: true,
         audience: "driver",
         language: "es",
@@ -73,7 +73,7 @@ export function resolutionFor(triaged: TriagedIssue): Resolution {
           ? `Answer with the pay breakdown for ${routeCode} — ${money(route.payCents)}`
           : "Answer with the route's pay breakdown",
         rationale:
-          "The number is already on the route record. Answering with the breakdown rather than the figure stops the follow-up question.",
+          "The figure is on the route record. Send the breakdown, not just the number — it saves the second message.",
         drafts: true,
         audience: "driver",
         language: "es",
@@ -84,7 +84,7 @@ export function resolutionFor(triaged: TriagedIssue): Resolution {
         action: "escalate_payroll",
         title: `Escalate ${routeCode} to payroll with the route record attached`,
         rationale:
-          "This is a supply problem, not a support ticket. A driver who feels short-changed is tomorrow's unclaimed route, so it goes to someone who can actually move money — today.",
+          "This is a supply problem wearing a support ticket's clothes. A driver who feels short-changed doesn't take tomorrow's route, so it goes to someone who can actually move money.",
         drafts: true,
         audience: "driver",
         language: "es",
@@ -97,7 +97,7 @@ export function resolutionFor(triaged: TriagedIssue): Resolution {
           ? `Offer ${routeCode} to nearby drivers — ${money(route.payCents)}, pickup at ${route.pickupLocation}`
           : "Offer the route to nearby drivers",
         rationale:
-          "Nobody has taken it and the pickup clock is running. This is the one failure mode entirely inside our control, and it is still fixable right now.",
+          "Nobody's taken it and the pickup clock is running. Still fixable, for now.",
         drafts: true,
         audience: "driver",
         language: "es",
@@ -110,7 +110,7 @@ export function resolutionFor(triaged: TriagedIssue): Resolution {
           ? `Call the pickup contact at ${route.pickupLocation}`
           : "Call the pickup contact",
         rationale:
-          "Bag counts and stop order get resolved by the person standing in the warehouse, not over text. The driver is blocked until they are.",
+          "Bag counts get sorted by whoever's standing in the warehouse, not over text. He's blocked until they are.",
         drafts: false,
         audience: "driver",
         language: null,
@@ -122,7 +122,7 @@ export function resolutionFor(triaged: TriagedIssue): Resolution {
         action: "call_driver",
         title: `Call ${driverCode} — no movement and no answer`,
         rationale:
-          "Silence off-geofence is a breakdown, an accident, or a driver who has given up on the day. Nothing downstream can be planned until someone knows which.",
+          "Off-geofence silence is a breakdown, an accident, or someone who's given up on the day. We can't plan anything downstream until we know which.",
         drafts: false,
         audience: "driver",
         language: null,
@@ -133,7 +133,7 @@ export function resolutionFor(triaged: TriagedIssue): Resolution {
         action: "send_eta",
         title: "Reply with the live ETA and the tracking link",
         rationale:
-          "The ETA is already on the stop. Sending it beats the automated late text, because this consignee has already decided the automated text was not enough.",
+          "The ETA's on the stop already. They've written in anyway, so the automated late text clearly didn't land for them.",
         drafts: true,
         audience: "customer",
         language: "es",
@@ -144,7 +144,7 @@ export function resolutionFor(triaged: TriagedIssue): Resolution {
         action: "confirm_address",
         title: "Confirm the corrected address before the driver gets there",
         rationale:
-          "Catching this before arrival saves a failed attempt and a redelivery leg. After arrival it costs both.",
+          "Catch it before arrival and it costs a message. After arrival it's a failed attempt and a redelivery leg.",
         drafts: true,
         audience: "customer",
         language: "es",
@@ -155,7 +155,7 @@ export function resolutionFor(triaged: TriagedIssue): Resolution {
         action: "request_access",
         title: "Get the entry code or buzzer name from the consignee",
         rationale:
-          "The driver is at the door and cannot get in. The code only exists in the consignee's head, so asking is the whole fix.",
+          "He's at the door and can't get in. The code only exists in the consignee's head.",
         drafts: true,
         audience: "customer",
         language: "es",
@@ -166,7 +166,7 @@ export function resolutionFor(triaged: TriagedIssue): Resolution {
         action: "send_pod",
         title: "Send the delivery photo and timestamp",
         rationale:
-          "We already hold the photo and the scan time. This is a lookup the business should never have had to ask a person for.",
+          "We've got the photo and the scan time. They shouldn't have had to ask a person for this.",
         drafts: true,
         audience: "business",
         language: "en",
@@ -177,7 +177,7 @@ export function resolutionFor(triaged: TriagedIssue): Resolution {
         action: "triage_list",
         title: "Acknowledge the list and split it into its own issues",
         rationale:
-          "One email holding a day's problems hides every individual clock inside it. Acknowledge now, split so each one gets ranked on its own.",
+          "One email with a day's problems hides every clock inside it. Acknowledge, then split.",
         drafts: true,
         audience: "business",
         language: "en",
@@ -188,7 +188,7 @@ export function resolutionFor(triaged: TriagedIssue): Resolution {
         action: "call_driver",
         title: `Call ${driverCode} — pickup is late and the stops have not started`,
         rationale:
-          "The whole route is behind before it begins. Either they are on the way or they are not coming, and the two need very different next moves.",
+          "The route's behind before it starts. Either they're on the way or they're not coming, and those need very different next moves.",
         drafts: false,
         audience: "driver",
         language: null,
@@ -199,7 +199,7 @@ export function resolutionFor(triaged: TriagedIssue): Resolution {
         action: "offer_route",
         title: `Reassign ${routeCode} — the driver cancelled`,
         rationale:
-          "An abandoned route becomes an unclaimed route the moment we stop looking at it. Offer it out while the pickup window is still reachable.",
+          "Offer it out while the pickup window is still reachable.",
         drafts: true,
         audience: "driver",
         language: "es",
@@ -210,7 +210,7 @@ export function resolutionFor(triaged: TriagedIssue): Resolution {
         action: "confirm_address",
         title: "Check the drop point with the consignee before the business does",
         rationale:
-          "Marked delivered a long way from the address is either a geocoding miss or a parcel left somewhere wrong. Both are much cheaper to find out from us than from a complaint.",
+          "Either a geocoding miss or a parcel left somewhere wrong. Both are cheaper to hear from us than from a complaint.",
         drafts: true,
         audience: "customer",
         language: "es",
@@ -221,7 +221,7 @@ export function resolutionFor(triaged: TriagedIssue): Resolution {
         action: "read_and_route",
         title: "Read it and route it — we could not classify this one",
         rationale:
-          "The classifier would rather say nothing than guess. Four words of reading sorts it, and a confidently wrong label would have cost more.",
+          "The classifier would rather say nothing than guess. Four words of reading sorts it.",
         drafts: false,
         audience: audience === "ops" ? null : audience,
         language: null,

@@ -115,7 +115,7 @@ export function ContextSheet({
             glyph="d"
             onClick={onDraft}
             disabled={!resolution.drafts}
-            title={resolution.drafts ? undefined : "This one is a phone call, not a message"}
+            title={resolution.drafts ? undefined : "This one's a phone call, not a message"}
           >
             {resolution.drafts
               ? `Draft reply${resolution.language === "es" ? " (ES)" : ""}`
@@ -241,7 +241,7 @@ export function ContextSheet({
               pressed={disposition.kind === "resolved" && disposition.reason === reason}
               title={
                 reason === "needed_more"
-                  ? "Tells us this panel was not enough. It is the only honest way to measure that."
+                  ? "Tells us the panel wasn't enough. Nothing else measures that."
                   : undefined
               }
             >
@@ -251,8 +251,8 @@ export function ContextSheet({
         </div>
         <div style={{ marginTop: 9, fontSize: 12, color: "var(--ink-3)", maxWidth: "68ch" }}>
           {isInbound(issue)
-            ? "“Needed another system” is not a courtesy option — it is the only honest way to find out whether this panel actually replaced the phone, Slack and the admin tool."
-            : "This one came from the ops board rather than a person, so nobody is waiting on a reply — but it still needs closing out."}
+            ? "Mark “needed another system” when it happens. It's how we find out whether this panel really replaced the phone, Slack and the admin tool."
+            : "This came from the ops board, not a person, so nobody's waiting on a reply — but it still needs closing out."}
         </div>
 
         <div className="keys">

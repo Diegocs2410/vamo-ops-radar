@@ -43,7 +43,7 @@ a pill with the tier written on it. The board survives monochrome and colour-bli
 Two faces, each with a job.
 
 - **Archivo** — the interface and all prose. Captions are 10px, weight 500, uppercase,
-  tracked +0.045em in `--ink-3`. Deliberately lightly tracked: heavy tracking is what makes
+  tracked +0.045em in `--ink-3`. Lightly tracked on purpose: heavy tracking is what makes
   a dense UI read as dated.
 - **JetBrains Mono** — anything read as a value rather than as prose: issue refs, route
   codes, clocks, priority figures. Tabular figures and a slashed zero, because `R-405` and

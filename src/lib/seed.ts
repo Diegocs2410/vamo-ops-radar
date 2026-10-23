@@ -413,7 +413,7 @@ const ISSUES: IssueRecipe[] = [
     raisedByName: "Dispatch board",
   },
   {
-    // Deliberately unreadable by the rules: the honest blank is worth demonstrating.
+    // Written so the rules cannot read it. The blank result is the point.
     source: "driver_sms",
     openedMin: 6,
     sender: "driver",

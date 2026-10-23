@@ -66,7 +66,7 @@ describe("the demo board", () => {
   });
 
   it("lets the classifier do the classifying, including when it cannot", () => {
-    // One seeded message is deliberately unreadable by the rules. If this stops being
+    // One seeded message is written so the rules cannot read it. If this stops being
     // `unknown`, either the rules got better or the fixture got easier — both worth knowing.
     const kinds = buildSnapshot(NOW).issues.map((issue) => issue.kind);
     expect(kinds).toContain("unknown");

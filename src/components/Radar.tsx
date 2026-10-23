@@ -149,7 +149,7 @@ export function Radar({ initialSnapshot }: { initialSnapshot: OperationSnapshot 
 
       const resolution = resolutionFor(row);
       if (!resolution.drafts || !resolution.audience || !resolution.language) {
-        setStatus(`${row.issue.ref} needs a phone call, not a message`);
+        setStatus(`${row.issue.ref} is a phone call, not a message`);
         return;
       }
 
@@ -484,7 +484,7 @@ export function Radar({ initialSnapshot }: { initialSnapshot: OperationSnapshot 
               <span className="empty__stamp">Inbox clear</span>
               <p className="empty__text">
                 {fullQueue.length === 0
-                  ? "Nobody is waiting on us: no driver stuck at a pickup, no consignee chasing an order, nothing flagged by the ops board. The queue fills itself when that stops being true."
+                  ? "Nobody's waiting on us right now — no driver stuck at a pickup, no consignee chasing an order, nothing flagged. It fills back up on its own."
                   : "Nothing matches the current filter. Press Esc to put everything back."}
               </p>
             </div>

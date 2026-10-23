@@ -47,7 +47,7 @@ const DEFAULT_SNOOZE_MINUTES = 15;
 export const COMMAND_HELP: { keys: string; what: string }[] = [
   { keys: "take", what: "Put the selected issue in your hands" },
   { keys: "resolve answered", what: "Close it: answered · actioned · escalated" },
-  { keys: "resolve more", what: "Close it as having needed another system — this is the honest one" },
+  { keys: "resolve more", what: "Close it when the panel was not enough" },
   { keys: "snooze 20", what: "Set it aside for N minutes" },
   { keys: "draft", what: "Have the reply written" },
   { keys: "show critical", what: "Filter: critical · high · watch · all" },

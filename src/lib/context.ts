@@ -8,7 +8,7 @@
  * So this module does the piecing. Given one issue, it works out every lookup a human
  * would otherwise have performed, in which system, and gathers the answers onto one sheet.
  *
- * `sourcesFor` is deliberately not a debug aid: it is shown to the operator, naming what
+ * `sourcesFor` is not a debug aid. It goes on screen, naming for the operator what
  * they did *not* have to open. The saving is the feature, so the feature says what it saved.
  */
 

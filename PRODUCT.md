@@ -46,7 +46,7 @@ not analysts and will not build a filter. Design consequences:
 
 ## How urgency is decided
 
-A transparent additive model over nine signals, scored 0–100. Deliberately not a learned
+A transparent additive model over nine signals, scored 0–100. Not a learned
 model and not an LLM: an operator who cannot see why an issue sits at the top will work the
 queue out of order, and then the ordering — the product — is worthless. Every weight lives
 in one `TRIAGE_TUNING` object an ops lead can argue with.
@@ -113,4 +113,4 @@ contact, and the second contact is the expensive one.
 The feed is synthetic, generated from a fixed PRNG with timings relative to the request, and
 labelled as such on screen. Inbound issues are not hand-labelled: their kind and their route
 and stop references come from running the real classifier over the message text, including
-one message deliberately written so the rules cannot read it.
+one message written so the rules cannot read it.

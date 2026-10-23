@@ -1,7 +1,7 @@
 /**
  * What the operator has done about each issue.
  *
- * Kept separate from the triaged board on purpose: triage says what is true about the
+ * Kept separate from the triaged board: triage says what is true about the
  * operation, this says what we have done about it. Merging the two would mean a
  * resolution could never survive a re-score, and the board re-scores every few seconds.
  */

@@ -15,8 +15,8 @@ of it is driver-side. And your own sentence named the cost: the context for any 
 is spread across the phone system, Slack and the admin tool, so the team pieces it together
 by hand.
 
-So I built the assembly, not the detection. **The unit of work is an issue, not a delivery**,
-and the job is to collapse three systems into one screen and propose the answer.
+So I built the assembly, not the detection. **The unit of work is an issue, not a
+delivery**, and the job is collapsing three systems into one screen and proposing the answer.
 
 Assumptions: an inbound SMS maps to a driver by phone number, and a driver has an active
 route — so even a message with no reference in it can usually be linked. Drivers and
@@ -38,9 +38,8 @@ is the product, is worthless. The panel shows the score as arithmetic you can ch
 distinction I'd defend hardest: **a person left unanswered outranks a flag left unreviewed.**
 Both age; only one has somebody at the other end.
 
-**The panel names what it saved you.** "4 lookups across 2 systems", listed — the phone
-thread, the route record, the driver record, the other stops on the route. The saving is the
-feature, so the feature says what it saved.
+**The panel names what it saved you.** "4 lookups across 2 systems", listed out — the phone
+thread, the route record, the driver record, the other stops on the route.
 
 **The LLM writes the reply and nothing else.** Judgment is the engine's job; language is the
 model's. It's told who it's writing to (drivers are colleagues who want the answer first and
@@ -68,30 +67,27 @@ Headline is **time to first reply** — minutes a person waits before anyone ans
 it, **lookups collapsed**: how many separate lookups, across how many systems, the screen is
 standing in for right now, derived from the live queue rather than configured.
 
-The honest one is **"answered from here"**, fed by operators marking when the panel wasn't
-enough. That's the only way to find out whether it actually replaced the three systems.
+Then **"answered from here"**, fed by operators marking when the panel wasn't enough.
+Nothing else tells us whether it really replaced the three systems.
 
 Anti-metric: issues closed per hour. Speed with the wrong answer generates the second
 contact, and the second contact is the expensive one.
 
 ## How I used AI
 
-Heavily, and deliberately. I used Claude Code as the implementer: I made the product calls
-(which problem, which signals, what to cut), the model design, and the UX and visual
-decisions, and had it write the implementation, the 135 unit tests and the docs.
+Heavily. Claude Code did the implementation, the 135 tests and the docs; I kept the product
+calls — which problem, which signals, what to cut — and the model and UX design.
 
-Worth saying plainly: **my first build was the wrong product.** I'd attacked proactive
-detection before your follow-up arrived, and your answer about the ops board contradicted
-the premise. I rewrote around issues and context assembly rather than submitting something
-that argued with its own brief. The delivery-risk engine from that first pass survives,
-demoted to a single input that asks what a frozen route is costing.
+**My first build was the wrong product.** I went at proactive detection before your
+follow-up landed, and your answer about the ops board contradicted the premise I'd built on.
+So I rewrote it around issues and context assembly. The delivery-risk engine from that pass
+survives, demoted to one input that asks what a frozen route is costing.
 
-Several tests caught real bugs — `Number(null)` turning "no projected arrival" into "arrives
-exactly on time", a stalled driver flagging stops five hours away, and the queue putting
-ops-board flags above people until I separated "unanswered" from "unreviewed".
+Tests caught three real bugs: `Number(null)` turning "no projected arrival" into "arrives
+exactly on time", a stalled driver flagging stops five hours away, and the queue ranking
+your own flags above your drivers until I split "unanswered" from "unreviewed".
 
 ## Time
 
-About two and a half hours of build time across two sessions, the second one being the
-rewrite after your follow-up. The write-up and the Loom are on top of that, as the brief
-allows.
+About two and a half hours of build, across two sessions — the second being the rewrite
+after your follow-up. Write-up and video on top of that, as the brief allows.

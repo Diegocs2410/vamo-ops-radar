@@ -1,7 +1,7 @@
 /**
  * The risk engine.
  *
- * Deliberately a transparent additive model, not a learned one and not an LLM:
+ * A transparent additive model — not a learned one, and not an LLM:
  *
  *  - The ranking *is* the product. An operator who cannot see why a row scores 72
  *    will not trust the row, and an untrusted queue gets worked out of order.
