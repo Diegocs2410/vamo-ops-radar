@@ -1,25 +1,27 @@
 /**
  * The masthead numbers.
  *
- * These are derived from the live board rather than configured, because the product's
- * whole claim is that it buys the operator time — so the claim has to be measurable
- * from what is on screen, not asserted next to it.
+ * Derived from the live board rather than configured, because the product's claim is that
+ * it collapses three systems into one screen — so the claim has to be measurable from what
+ * is on screen, not asserted next to it.
  */
 
+import { sourcesFor, systemCount } from "./context";
 import type { ShiftStats } from "./domain";
-import type { RiskTier, ScoredDelivery } from "./risk";
+import type { RiskTier } from "./risk";
+import type { TriagedIssue } from "./triage";
 
 export type TierCounts = Record<RiskTier, number>;
 
-export function countTiers(board: ScoredDelivery[]): TierCounts {
+export function countTiers(board: TriagedIssue[]): TierCounts {
   const counts: TierCounts = { critical: 0, high: 0, watch: 0, cleared: 0 };
   for (const row of board) counts[row.tier] += 1;
   return counts;
 }
 
-/** Everything the queue should actually show: anything above the noise floor. */
-export function atRisk(board: ScoredDelivery[]): ScoredDelivery[] {
-  return board.filter((row) => row.tier !== "cleared");
+/** Everything still waiting on a person. */
+export function openIssues(board: TriagedIssue[]): TriagedIssue[] {
+  return board.filter((row) => row.issue.answeredAt === null);
 }
 
 function median(values: number[]): number {
@@ -32,44 +34,63 @@ function median(values: number[]): number {
 }
 
 /**
- * Lead time: minutes between a flag and the promised window closing. It is the headline
- * metric because it is the operator's room to act — below roughly twenty minutes there is
- * no play left to make, only an apology.
+ * How many lookups this screen is standing in for right now, and across how many systems.
  *
- * Only rows whose window is still open contribute. A row already past its window has a
- * lead time of zero by definition and would drag the median toward a number that says
- * nothing about how early we caught things.
+ * This is the headline, because it is the problem in the ops team's own words: the context
+ * for any one issue is spread across the phone system, Slack and the admin tool, and they
+ * piece it together by hand.
  */
+export function assemblyLoad(board: TriagedIssue[]): {
+  lookups: number;
+  systems: number;
+} {
+  const open = openIssues(board);
+  let lookups = 0;
+  const systems = new Set<string>();
+
+  for (const row of open) {
+    const sources = sourcesFor(row);
+    lookups += sources.length;
+    for (const source of sources) systems.add(source.system);
+  }
+
+  return { lookups, systems: systems.size };
+}
+
+/** Share of open issues that arrived from a person rather than from their ops board. */
+export function inboundShare(board: TriagedIssue[]): number | null {
+  const open = openIssues(board);
+  if (open.length === 0) return null;
+
+  const inbound = open.filter((row) => row.issue.source !== "detected").length;
+  return inbound / open.length;
+}
+
 export function computeShiftStats(
-  board: ScoredDelivery[],
-  history: Pick<ShiftStats, "resolvedToday" | "falsePositivesToday">,
+  board: TriagedIssue[],
+  history: Pick<ShiftStats, "resolvedToday" | "answeredFromOneScreen" | "reopenedToday">,
 ): ShiftStats {
-  const flagged = atRisk(board);
-
-  const leadTimes = flagged
-    .map((row) => row.minutesToWindowEnd)
-    .filter((minutes) => minutes > 0);
-
-  // Proactive means Radar got there first: flagged, and the consignee has not
-  // contacted us about it yet.
-  const detectedProactively = flagged.filter(
-    (row) => row.delivery.contacts.length === 0,
-  ).length;
+  // The live number that matters: how long the people waiting have been waiting.
+  const waits = openIssues(board).map((row) => row.waitingMinutes);
 
   return {
-    detectedProactively,
-    incidentsToday: flagged.length + history.resolvedToday,
-    medianLeadTimeMin: median(leadTimes),
     resolvedToday: history.resolvedToday,
-    falsePositivesToday: history.falsePositivesToday,
+    answeredFromOneScreen: history.answeredFromOneScreen,
+    reopenedToday: history.reopenedToday,
+    medianFirstReplyMin: median(waits),
   };
 }
 
-/**
- * Precision, as the operator's own resolutions report it. Fed by the "false positive"
- * resolve reason, which is why that button exists.
- */
-export function precision(stats: ShiftStats): number | null {
+/** Of what we closed, how much stayed closed. */
+export function stuckRate(stats: ShiftStats): number | null {
   if (stats.resolvedToday === 0) return null;
-  return (stats.resolvedToday - stats.falsePositivesToday) / stats.resolvedToday;
+  return (stats.resolvedToday - stats.reopenedToday) / stats.resolvedToday;
 }
+
+/** Of what we closed, how much needed nothing but this screen. */
+export function oneScreenRate(stats: ShiftStats): number | null {
+  if (stats.resolvedToday === 0) return null;
+  return stats.answeredFromOneScreen / stats.resolvedToday;
+}
+
+export { systemCount };

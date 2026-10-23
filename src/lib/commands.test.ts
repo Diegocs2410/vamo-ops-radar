@@ -4,9 +4,9 @@ import { type CommandContext, matchesSearch, parseCommand } from "./commands";
 
 const context: CommandContext = {
   rows: [
-    { id: "a", consignmentNo: "VM-480200", tier: "critical" },
-    { id: "b", consignmentNo: "VM-480201", tier: "critical" },
-    { id: "c", consignmentNo: "VM-480210", tier: "watch" },
+    { id: "a", ref: "ISS-2040", tier: "critical" },
+    { id: "b", ref: "ISS-2041", tier: "critical" },
+    { id: "c", ref: "ISS-2050", tier: "watch" },
   ],
   selectedId: "a",
 };
@@ -29,7 +29,7 @@ describe("parseCommand", () => {
     const plan = parseCommand("take", context)!;
     expect(plan.ok).toBe(true);
     expect(plan.affected).toEqual(["a"]);
-    expect(plan.summary).toContain("VM-480200");
+    expect(plan.summary).toContain("ISS-2040");
   });
 
   it("refuses to act when nothing is selected, rather than guessing", () => {
@@ -38,46 +38,46 @@ describe("parseCommand", () => {
     expect(plan.affected).toEqual([]);
   });
 
-  it("targets a block by consignment number, with or without the prefix", () => {
-    expect(parseCommand("take VM-480210", context)!.affected).toEqual(["c"]);
-    expect(parseCommand("take 480210", context)!.affected).toEqual(["c"]);
+  it("targets an issue by ref, with or without the prefix", () => {
+    expect(parseCommand("take ISS-2050", context)!.affected).toEqual(["c"]);
+    expect(parseCommand("take 2050", context)!.affected).toEqual(["c"]);
   });
 
   it("will not act on an ambiguous number", () => {
-    const plan = parseCommand("take 4802", context)!;
+    const plan = parseCommand("take 20", context)!;
     expect(plan.ok).toBe(false);
-    expect(plan.summary).toContain("matches 3 blocks");
+    expect(plan.summary).toContain("matches 3 issues");
   });
 
   it("targets a whole tier, so one command can clear a batch", () => {
-    const plan = parseCommand("resolve fp critical", context)!;
+    const plan = parseCommand("resolve answered critical", context)!;
     expect(plan.ok).toBe(true);
     expect(plan.affected).toEqual(["a", "b"]);
-    expect(plan.summary).toContain("2 critical blocks");
+    expect(plan.summary).toContain("2 critical issues");
   });
 
   it("says so when a targeted tier is empty, instead of succeeding silently", () => {
-    const plan = parseCommand("resolve fp high", context)!;
+    const plan = parseCommand("resolve answered high", context)!;
     expect(plan.ok).toBe(false);
-    expect(plan.summary).toContain("No high blocks");
+    expect(plan.summary).toContain("No high issues");
   });
 
   describe("resolve", () => {
     it("needs a reason — an unexplained close teaches the model nothing", () => {
       const plan = parseCommand("resolve", context)!;
       expect(plan.ok).toBe(false);
-      expect(plan.summary).toContain("notified");
+      expect(plan.summary).toContain("answered");
     });
 
     it("accepts the shorthand an operator would actually type", () => {
-      for (const alias of ["fp", "false-positive", "notify", "rebook", "driver"]) {
+      for (const alias of ["answered", "replied", "done", "escalate", "more"]) {
         expect(parseCommand(`resolve ${alias}`, context)!.ok).toBe(true);
       }
     });
 
-    it("stamps a false positive differently, because it means something different", () => {
-      expect(parseCommand("resolve fp", context)!.ghost).toBe("False positive");
-      expect(parseCommand("resolve notified", context)!.ghost).toBe("Resolved");
+    it("stamps 'needed another system' differently, because it means something different", () => {
+      expect(parseCommand("resolve more", context)!.ghost).toBe("Needed more");
+      expect(parseCommand("resolve answered", context)!.ghost).toBe("Resolved");
     });
   });
 
@@ -163,7 +163,7 @@ describe("parseCommand", () => {
   });
 
   it("never marks a failed plan as affecting anything", () => {
-    const failures = ["resolve", "show", "find", "snooze 0", "take 4802", "nonsense"];
+    const failures = ["resolve", "show", "find", "snooze 0", "take 20", "nonsense"];
     for (const input of failures) {
       const plan = parseCommand(input, context)!;
       expect(plan.ok).toBe(false);
@@ -175,7 +175,8 @@ describe("parseCommand", () => {
 
 describe("matchesSearch", () => {
   const fields = {
-    consignmentNo: "VM-480200",
+    ref: "ISS-2040",
+    consignment: "VM-480200",
     consignee: "Marta Ibáñez",
     address: "Calle de Alcalá 112, Salamanca",
     driver: "V-07 Lucía Ferrer",

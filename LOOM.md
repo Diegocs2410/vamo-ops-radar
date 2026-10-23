@@ -1,75 +1,85 @@
 # Loom script — 4 minutes
 
-Not a feature tour. The point is to show the judgment, not the surface.
+Not a feature tour. Show the judgment, not the surface.
 
-## 0:00 — The problem (30s)
+## 0:00 — Why this isn't a detector (40s)
 
-> "Vamo's ops team finds out about incidents when someone complains. The complaint is the
-> alert. By then the window is blown and the customer is already angry.
+> "Your follow-up changed what I built, so let me start there.
 >
-> So the expensive thing isn't the incident — it's the gap between the incident happening
-> and an operator knowing about it. That's the only thing I tried to fix."
-
-## 0:30 — The board (45s)
-
-Screen open, don't click anything yet.
-
-> "One screen. Everything at risk today, worst first. Four critical, four high."
-
-Point at a row.
-
-> "Every row answers three questions without a click. How urgent — that's the score. Why —
-> those are the signals that fired, with the points each one contributed. And what to do —
-> that's the remarks line."
-
-Point at the masthead.
-
-> "Median lead time, twenty minutes. That's how much room the operator has left to act,
-> and it's computed from the board below, not configured. Seventy-three percent caught
-> before anyone called us — that's the whole thesis, as a live number."
-
-## 1:15 — Why it's not an LLM ranking things (45s)
-
-Press `Enter` on the top row. The carbon copy opens.
-
-> "Here's the part I'd defend hardest. 'Why this is 100' — forty-five for the ETA breach,
-> thirty for the failed attempt, twenty because the customer has chased us twice, and so on.
-> It adds up in front of you.
+> You said the ops board already flags stalled drivers, late pickups and cancellations. So
+> building another detector would be rebuilding what you have. What's still manual is
+> everything that arrives as a text or a call — mostly from drivers — and you said it
+> yourself: the context for any one problem is spread across the phone system, Slack and
+> the admin tool, and the team pieces it together by hand.
 >
-> That's deliberate. I could have had a model rank these. But an operator who can't see why
-> a row scores 100 won't trust the row, and an untrusted queue gets worked out of order — at
-> which point the ranking, which is the actual product, is worthless. Every weight sits in
-> one object an ops lead can argue with."
+> So this isn't detection. It's assembly."
 
-## 2:00 — Where the LLM actually is (40s)
+## 0:40 — The queue (45s)
 
-Click **Draft message**.
+> "One screen. Every issue reaching the team, ranked. Fifteen open."
 
-> "The LLM writes this. Judgment is the engine's job; language is the model's. It gets the
-> facts and is told not to invent a reason or promise a time it wasn't given.
+Point at row one.
+
+> "Top of the queue is a driver who can't see his route. You can read what he actually
+> wrote, right on the row — I'm not going to make someone open fifteen items to find out
+> what they are. Fourteen stops frozen behind one unanswered text."
+
+Point at the header.
+
+> "Longest wait, 23 minutes. 43 lookups collapsed across 3 systems. Both of those are
+> computed from what's on the screen, not typed into a config."
+
+## 1:25 — The part I'd defend hardest (50s)
+
+Press `Enter`.
+
+> "Four lookups across two systems — and it lists them. The phone thread, the route record,
+> the driver record, the other stops on the route. That list is the product: it's naming
+> what you didn't have to open.
 >
-> And there's a template behind every draft — no key, a rate limit, a refusal, you still get
-> something to send, and it tells you which one you're looking at. An ops tool can't have a
-> dead button."
+> Below it, 'why this is 72'. Thirty-two because a person has been waiting with no reply,
+> thirty because fourteen stops can't move, ten for the contract account. It adds up in
+> front of you. I could have had a model rank these, but an operator who can't see why a row
+> is at the top works the queue out of order — and then the ordering, which is the whole
+> product, is worthless."
 
-## 2:40 — Built for someone who's busy (50s)
+## 2:15 — People versus flags (30s)
 
-Close with `Esc`. Type `resolve fp critical` — pause before pressing Enter.
+Scroll to a Dispatch-board row.
 
-> "Operators work by keyboard, because the mouse is for the phone. And commands rehearse
-> before they commit — look: it's already showing me what would happen. Four blocks fading,
-> each stamped faintly, and the strip counts them. Enter just keeps what's already true."
+> "One distinction worth calling out. A person left unanswered scores higher than a flag
+> left unreviewed. Both age, but only one of them has somebody at the other end waiting on
+> us. Before I separated those two, the board put your own flags above your drivers — which
+> was exactly backwards."
+
+## 2:45 — Where the model is (40s)
+
+Click **Draft reply (ES)**.
+
+> "The LLM writes this and nothing else. Judgment is the engine's job; language is the
+> model's. It's told it's writing to a driver, not a customer — drivers want the answer
+> first and the apology never — and exactly which facts it may use, so it can't invent a
+> time or an amount.
+>
+> And there's a template behind every draft. No key, a rate limit, a refusal — you still get
+> something to send, and it tells you which one you're looking at."
+
+## 3:25 — Busy hands (20s)
+
+Close with `Esc`. Type `resolve answered critical` — pause before Enter.
+
+> "Operators work by keyboard, because the mouse is for the phone. And commands preview
+> before they commit — it's already showing me what would happen. Enter just keeps what's
+> already true."
 
 Press Enter.
 
-> "And 'false positive' isn't a courtesy option — it's the only honest source of precision
-> data. The tool measures itself."
+## 3:45 — Cuts and next (25s)
 
-## 3:30 — What I cut, and what's next (30s)
-
-> "No map — they already have one, and a map answers 'where' when the question is 'what do
-> I do'. No persistence, no real integrations, nothing actually sends. Data's synthetic and
-> says so on screen.
+> "No detection, no persistence, nothing actually sends. Data's synthetic and says so.
 >
-> With another week I'd close the precision loop with those false-positive marks and plumb
-> one real shipper feed. About an hour of build time."
+> Next week: classification moves to a model with the rules as fallback, and I'd close the
+> loop on 'needed another system' — that resolve reason is the only honest way to find out
+> whether this panel really replaced the three tools.
+>
+> About two and a half hours, across two passes — the second one after your follow-up."

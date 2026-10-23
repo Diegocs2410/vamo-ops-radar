@@ -1,104 +1,116 @@
-# PRODUCT.md — Vamo Ops Radar
+# PRODUCT.md — Vamo Ops Desk
 
-> Product truth for this project. Visual decisions live in DESIGN.md.
+> Product truth. Visual decisions live in DESIGN.md.
 
 ## One line
 
-Radar turns a last-mile operation's noisy day into one ranked queue of the deliveries
-that are about to fail — with the reason and the next move already on the row.
+Every issue reaching the ops team in one ranked queue, with the context already assembled
+and the reply drafted.
 
 ## The problem chosen
 
-Vamo's ops team finds out about incidents when someone complains. The complaint *is*
-the alert. By then the delivery window is already blown, the customer is already angry,
-and the operator has to reconstruct what happened across the dispatch tool, the driver's
-WhatsApp thread, and the shipper's email.
+Vamo's follow-up to the brief rules out the obvious answer. Their ops board already flags
+stalled drivers, late pickups, cancellations and deliveries marked far from the address,
+and customers already get an automated "running late" text. Building a detector would be
+rebuilding what they have.
 
-The expensive thing is not the incident. It is the **latency between the incident
-happening and an operator knowing about it**. Every minute of that latency converts a
-fixable delay into a failed delivery, a support ticket, and an SLA credit.
+What still lands on a human arrives as a text, a call, a Slack thread or an email — and
+most of it is **driver-side**: where is my route, what does this route pay, I was paid
+short, nobody took this route, I am stuck at the pickup with three bags missing, a driver
+has gone quiet mid-route. Then the customer side, then businesses asking for proof of
+delivery.
 
-So Radar does not try to be a better dispatch tool, a better map, or a better CRM.
-It compresses that latency to near zero and hands the operator the first move.
+And their own sentence names the real cost:
+
+> "The context for any one problem is spread across our phone system, Slack threads and
+> the admin tool, so the team pieces it together by hand."
+
+That is the product. Not detection — **assembly**. The unit of work is an issue, not a
+delivery, and the job is to collapse three systems into one screen and propose the answer.
 
 ## Who it is for
 
-**Primary: the ops coordinator.** One to three people covering 200–600 stops/day across
-~25 drivers. Their day is interrupt-driven: phone, WhatsApp, dispatch screen, inbox.
-They are not analysts. They will not build a filter. They need the screen to have
-already decided what matters.
+**The ops coordinator.** One to three people, interrupt-driven, phone in one hand. They are
+not analysts and will not build a filter. Design consequences:
 
-Design consequences:
-- The queue must be correct in rank order, because they will work it top-down and stop.
-- Every row must justify itself in one glance. An unexplained score is ignored.
+- The queue must be correct in rank order, because they work it top-down and stop.
+- Every row must show what the person actually said. A row you have to open to find out
+  what it is has saved nobody anything.
 - Hands stay on the keyboard. The mouse is for the phone.
-- Density over whitespace. They are looking at this on a second monitor all day.
-
-**Secondary: the shift lead**, who wants the top-of-screen numbers to know if today is
-going badly and whether the queue is being worked.
+- Density over whitespace. This is open on a second monitor all day.
 
 ## Job to be done
 
-> "Tell me which deliveries are going to fail in the next hour, why, and let me act
-> before the customer calls."
+> "Tell me who is waiting on us, what they asked, everything I need to answer them, and
+> what to say."
 
-Every row answers three questions with no click:
-1. **How urgent** — risk score, tier, minutes left in the promised window.
-2. **Why** — the specific signals that fired, in operator language, with their weights.
-3. **What to do** — one suggested play, with the action one key away.
+## How urgency is decided
 
-## How risk is decided
+A transparent additive model over nine signals, scored 0–100. Deliberately not a learned
+model and not an LLM: an operator who cannot see why an issue sits at the top will work the
+queue out of order, and then the ordering — the product — is worthless. Every weight lives
+in one `TRIAGE_TUNING` object an ops lead can argue with.
 
-A transparent additive model over eight signals, scored 0–100 and clamped. Deliberately
-*not* a learned model and *not* an LLM:
+One distinction the model takes seriously: **a person left unanswered outranks a flag left
+unreviewed**. Both age, but only one of them has somebody at the other end.
 
-- An operator who cannot see why a row is 72 will not trust the row.
-- The ranking is the product. It must be deterministic, unit-testable, and tunable by
-  someone who understands the operation but not machine learning.
+Delivery risk still exists and is still scored, but it has been demoted from the headline
+to a single input — `stops_at_risk` asks it what a frozen route is actually costing.
 
-Signals: ETA breach (projected arrival vs. promised window), driver stalled (no GPS
-movement off-geofence), repeat customer contact, failed attempt sitting idle, risky
-address (prior failures or missing unit), building access unknown, SLA account, window
-closing with nobody assigned.
+## Where the LLM is, and where it is not
 
-The LLM is used where language is the work, not where judgment is the work: drafting the
-customer or shipper message for the suggested play. It degrades to a template when no
-API key is present, because an ops tool cannot have a dead button.
+| Job | Who does it | Why |
+|---|---|---|
+| What kind of issue is this | Rules, with an LLM upgrade path | Must keep working when a model is rate limited |
+| What is it about (route, stop) | Rules, from the text | Same |
+| How urgent is it | The additive model | Must be explainable and tunable |
+| What should we do | A table keyed on the kind | Must be consistent |
+| **What do we say** | **The model** | This is language work, and it is the slow part |
+
+Every draft has a template behind it, so a missing key or a refusal still leaves the
+operator something to send.
+
+## Language
+
+Inbound messages are Spanish, because the drivers and consignees are in Madrid. Replies go
+out in the recipient's language — Spanish to drivers and consignees, English to a shipper's
+account team. The ops surface itself is English. One language per audience, never a mix.
 
 ## Scope
 
-**In the MVP**
-- One screen: the live triage queue + a detail panel.
-- The risk engine, with per-signal attribution surfaced in the UI.
-- Suggested play per incident, derived from the dominant signal.
-- Operator workflow: take, draft message, resolve with a reason, snooze.
-- "False positive" as a first-class resolve reason — it is how precision gets measured.
-- Keyboard-first navigation.
-- Synthetic but structurally realistic feed served from an API route, so the seam where
-  real dispatch data plugs in is visible.
+**In**
+- One screen: the ranked issue queue plus a context panel.
+- Nine triage signals with per-signal attribution on the face of the row.
+- Rule-based classification and reference extraction over the raw message text.
+- Context assembly that names every lookup it stands in for, and in which system.
+- One suggested move per issue kind, with a drafted reply where a reply is the move.
+- Operator workflow: take, draft, snooze, resolve with a reason.
+- Keyboard-first operation, and commands that preview before they commit.
 
 **Cut, on purpose**
-- Live map. The operator already has one, and a map answers "where" when the question is
-  "what do I do".
-- Real integrations, auth, multi-tenancy, persistence. State is in memory.
-- Actually sending SMS/WhatsApp. The draft is produced; sending is stubbed.
-- Driver-facing app, proof-of-delivery storage, historical analytics, shipper portal.
+- Detection. They have it; Radar ingests their flags as one more issue source.
+- Real integrations, auth, multi-tenancy, persistence.
+- Actually sending anything. Drafts are produced; sending is stubbed.
+- Splitting a bulk "issue list" email into child issues. The suggested move says to; the
+  button does not exist.
+- Driver app, analytics, shipper portal.
 
 ## How success is measured
 
-- **Lead time** (the headline): minutes between Radar flagging a delivery and the window
-  breaching or the customer making contact. Target: a median above 20 minutes, because
-  below that the operator cannot act.
-- **Share detected proactively**: incidents flagged by Radar before any inbound contact.
-  The thesis of the product, shown live in the header.
-- **Precision**: flagged-and-genuinely-at-risk vs. resolved-as-false-positive. Fed
-  directly by the resolve reason, so the tool measures itself.
-- **Queue worked**: critical rows that reached a resolution within the shift.
+- **Time to first reply** (the headline): minutes a person waits before anyone answers.
+  Shown live as the median of what is currently open.
+- **Lookups collapsed**: how many separate lookups, across how many systems, this screen is
+  standing in for right now. Derived from the open queue, not configured.
+- **Answered from here**: share of issues closed without opening anything else — fed
+  directly by the resolve reasons, so the tool measures its own central claim.
+- **Reopen rate**: of what we closed, how much came back.
 
-Anti-metric: number of alerts. More alerts is the failure mode, not the goal.
+Anti-metric: issues closed per hour. Speed with the wrong answer generates the second
+contact, and the second contact is the expensive one.
 
 ## Data note
 
-The seed is synthetic Madrid-area data generated from a fixed PRNG, with timings relative
-to request time so the board always reads as live. All copy is English; operators would
-likely run it in Spanish, and the strings are not externalised — a deliberate MVP cut.
+The feed is synthetic, generated from a fixed PRNG with timings relative to the request, and
+labelled as such on screen. Inbound issues are not hand-labelled: their kind and their route
+and stop references come from running the real classifier over the message text, including
+one message deliberately written so the rules cannot read it.

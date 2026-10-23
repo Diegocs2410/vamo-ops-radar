@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 
 import type { Delivery, Driver, OperationSnapshot, Shipper } from "./domain";
 import { TUNING, projectArrival, scoreBoard, scoreDelivery, tierFor } from "./risk";
-import { dominantSignal, playFor } from "./plays";
 
 const NOW = "2026-10-22T10:00:00.000Z";
 
@@ -38,6 +37,7 @@ function makeDelivery(over: Partial<Delivery> = {}): Delivery {
   return {
     id: "dlv_1",
     consignmentNo: "VM-480221",
+    routeId: null,
     consignee: { name: "Marta Ibáñez", phone: "+34600111222" },
     address: { line: "Calle de Alcalá 112", district: "Salamanca", postcode: "28009" },
     shipperId: "shp_1",
@@ -56,6 +56,7 @@ function makeDelivery(over: Partial<Delivery> = {}): Delivery {
       accessNoteOnFile: false,
     },
     lastScanAt: at(-30),
+    podPhotoId: null,
     ...over,
   };
 }
@@ -407,12 +408,13 @@ describe("scoreBoard", () => {
       deliveries,
       drivers: { drv_1: makeDriver() },
       shippers: { shp_1: makeShipper() },
+      issues: [],
+      routes: {},
       shift: {
-        detectedProactively: 0,
-        incidentsToday: 0,
-        medianLeadTimeMin: 0,
         resolvedToday: 0,
-        falsePositivesToday: 0,
+        medianFirstReplyMin: 0,
+        answeredFromOneScreen: 0,
+        reopenedToday: 0,
       },
     };
   }
@@ -432,52 +434,5 @@ describe("scoreBoard", () => {
     const ranked = scoreBoard(snapshot([later, sooner]));
     expect(ranked[0].score).toBe(ranked[1].score);
     expect(ranked[0].delivery.id).toBe("sooner");
-  });
-});
-
-describe("plays", () => {
-  it("picks the heaviest signal as the one to act on", () => {
-    const scored = score(
-      makeDelivery({ windowEnd: at(-90), stopsAhead: 3 }),
-      makeDriver(),
-      makeShipper({ slaTier: "contract" }),
-    );
-    expect(dominantSignal(scored)).toBe("eta_breach");
-    expect(playFor(scored).action).toBe("notify_consignee");
-  });
-
-  it("sends the operator to the driver when the vehicle has stopped", () => {
-    const scored = score(
-      makeDelivery(),
-      makeDriver({ status: "stopped", minutesSinceMovement: 20, code: "V-22" }),
-    );
-    const play = playFor(scored);
-
-    expect(play.action).toBe("call_driver");
-    expect(play.title).toContain("V-22");
-    // Calling a driver is a phone call; there is nothing to draft.
-    expect(play.drafts).toBe(false);
-  });
-
-  it("prefers the irreversible situation when weights tie", () => {
-    // failed_attempt (30) outranks a repeat contact; it is already a loss.
-    const scored = score(
-      makeDelivery({
-        status: "attempted",
-        attempts: 1,
-        contacts: [
-          { at: at(-10), channel: "call", from: "consignee", note: "?" },
-          { at: at(-30), channel: "call", from: "consignee", note: "?" },
-        ],
-      }),
-    );
-    expect(dominantSignal(scored)).toBe("failed_attempt");
-    expect(playFor(scored).action).toBe("reschedule");
-  });
-
-  it("asks for nothing when nothing is wrong", () => {
-    const play = playFor(score(makeDelivery({ windowEnd: at(240) })));
-    expect(play.action).toBe("monitor");
-    expect(play.drafts).toBe(false);
   });
 });

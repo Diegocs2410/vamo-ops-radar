@@ -1,11 +1,12 @@
 import type { Metadata, Viewport } from "next";
-import { Archivo, Archivo_Narrow, Courier_Prime } from "next/font/google";
+import { Archivo, JetBrains_Mono } from "next/font/google";
 
 import "./globals.css";
 
 /*
- * Three faces, each with a job, matching how a real form is made: captions engraved on
- * the stock in advance, data struck in later with a ribbon.
+ * Two faces. Archivo carries the interface; the mono carries anything the operator reads
+ * as a value rather than as prose — refs, route codes, clocks, scores — where tabular
+ * figures and a slashed zero stop a misread.
  */
 
 const archivo = Archivo({
@@ -14,40 +15,32 @@ const archivo = Archivo({
   display: "swap",
 });
 
-const archivoNarrow = Archivo_Narrow({
+const mono = JetBrains_Mono({
   subsets: ["latin"],
-  weight: ["400", "600", "700"],
-  variable: "--font-archivo-narrow",
-  display: "swap",
-});
-
-const courier = Courier_Prime({
-  subsets: ["latin"],
-  weight: ["400", "700"],
-  variable: "--font-courier",
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-mono-face",
   display: "swap",
 });
 
 export const metadata: Metadata = {
-  title: "Vamo Ops Radar — delivery exception manifest",
+  title: "Vamo Ops Desk — issue queue",
   description:
-    "A ranked queue of the deliveries about to fail, with the reason and the next move already on the row.",
+    "Every issue reaching the ops team, ranked, with the context already assembled and the reply drafted.",
 };
 
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  themeColor: "#f2efe6",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#fafafb" },
+    { media: "(prefers-color-scheme: dark)", color: "#0c0e13" },
+  ],
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body
-        className={`${archivo.variable} ${archivoNarrow.variable} ${courier.variable}`}
-      >
-        {children}
-      </body>
+      <body className={`${archivo.variable} ${mono.variable}`}>{children}</body>
     </html>
   );
 }

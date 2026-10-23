@@ -1,43 +1,43 @@
 /**
- * What the operator has done about each incident.
+ * What the operator has done about each issue.
  *
- * Kept separate from the scored board on purpose: the engine says what is true about
- * the operation, this says what we have done about it. Merging the two would mean a
+ * Kept separate from the triaged board on purpose: triage says what is true about the
+ * operation, this says what we have done about it. Merging the two would mean a
  * resolution could never survive a re-score, and the board re-scores every few seconds.
  */
 
-import type { ScoredDelivery } from "./risk";
+import type { TriagedIssue } from "./triage";
 
 /**
- * Why a row was closed. `false_positive` is not a courtesy option — it is the only
- * honest source of precision data, and precision is how we find out whether the model
- * deserves the operator's attention. See PRODUCT.md.
+ * Why an issue was closed.
+ *
+ * `needed_more` is the important one and it is not a courtesy option. The whole product
+ * claim is that the context sheet replaces opening the phone system, Slack and the admin
+ * tool by hand; the only honest way to find out whether it does is to let the operator say
+ * when it did not. See PRODUCT.md.
  */
-export type ResolveReason =
-  | "notified"
-  | "rebooked"
-  | "driver_contacted"
-  | "false_positive";
+export type ResolveReason = "answered" | "actioned" | "escalated" | "needed_more";
 
 export const RESOLVE_REASONS: Record<ResolveReason, string> = {
-  notified: "Consignee notified",
-  rebooked: "Rebooked",
-  driver_contacted: "Driver contacted",
-  false_positive: "False positive",
+  answered: "Answered from here",
+  actioned: "Actioned from here",
+  escalated: "Escalated",
+  needed_more: "Needed another system",
 };
 
 /** Accepted on the command line, including the shorthand an operator will actually type. */
 export const RESOLVE_ALIASES: Record<string, ResolveReason> = {
-  notified: "notified",
-  notify: "notified",
-  rebooked: "rebooked",
-  rebook: "rebooked",
-  reschedule: "rebooked",
-  driver: "driver_contacted",
-  "driver-contacted": "driver_contacted",
-  fp: "false_positive",
-  "false-positive": "false_positive",
-  falsepositive: "false_positive",
+  answered: "answered",
+  answer: "answered",
+  replied: "answered",
+  actioned: "actioned",
+  action: "actioned",
+  done: "actioned",
+  escalated: "escalated",
+  escalate: "escalated",
+  more: "needed_more",
+  "needed-more": "needed_more",
+  elsewhere: "needed_more",
 };
 
 export type Disposition =
@@ -52,13 +52,13 @@ export const OPEN: Disposition = { kind: "open" };
 
 export function dispositionOf(
   dispositions: Dispositions,
-  deliveryId: string,
+  issueId: string,
   nowMs: number,
 ): Disposition {
-  const current = dispositions[deliveryId];
+  const current = dispositions[issueId];
   if (!current) return OPEN;
 
-  // A snooze that has run out is just an open incident again.
+  // A snooze that has run out is just an open issue again.
   if (current.kind === "snoozed" && current.untilMs <= nowMs) return OPEN;
   return current;
 }
@@ -71,31 +71,28 @@ export function isSpent(disposition: Disposition): disposition is SpentDispositi
 }
 
 export interface QueueRow {
-  scored: ScoredDelivery;
+  triaged: TriagedIssue;
   disposition: Disposition;
 }
 
 /**
- * Build the working queue: everything above the noise floor, worst first, with spent
- * rows sunk to the bottom rather than removed. Removing them would make the operator
- * doubt whether the action landed.
+ * Build the working queue, worst first, with spent rows sunk to the bottom rather than
+ * removed. Removing them would make the operator doubt whether the action landed.
  */
 export function buildQueue(
-  board: ScoredDelivery[],
+  board: TriagedIssue[],
   dispositions: Dispositions,
   nowMs: number,
 ): QueueRow[] {
   return board
-    .filter((scored) => scored.tier !== "cleared")
-    .map((scored) => ({
-      scored,
-      disposition: dispositionOf(dispositions, scored.delivery.id, nowMs),
+    .map((triaged) => ({
+      triaged,
+      disposition: dispositionOf(dispositions, triaged.issue.id, nowMs),
     }))
-    .sort((a, b) => {
-      const spent = Number(isSpent(a.disposition)) - Number(isSpent(b.disposition));
-      if (spent !== 0) return spent;
-      return 0; // the board is already ranked; keep it stable
-    });
+    .sort(
+      (a, b) =>
+        Number(isSpent(a.disposition)) - Number(isSpent(b.disposition)),
+    );
 }
 
 export function dispositionLabel(disposition: Disposition, nowMs: number): string | null {

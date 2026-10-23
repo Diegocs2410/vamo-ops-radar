@@ -2,11 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { CarbonCopy, type DraftState } from "./CarbonCopy";
+import { ContextSheet, type DraftState } from "./ContextSheet";
 import { CommandRule } from "./CommandRule";
-import { ManifestBlock } from "./ManifestBlock";
+import { IssueBlock } from "./IssueBlock";
 import { Masthead } from "./Masthead";
 import { Key, ShortcutSheet } from "./bits";
+import { KIND_LABELS } from "@/lib/classify";
 import {
   type CommandContext,
   type Effect,
@@ -15,7 +16,7 @@ import {
   parseCommand,
 } from "@/lib/commands";
 import type { OperationSnapshot } from "@/lib/domain";
-import { duration, time, window as formatWindow } from "@/lib/format";
+import { duration, money, time, window as formatWindow } from "@/lib/format";
 import {
   type Dispositions,
   type ResolveReason,
@@ -23,21 +24,23 @@ import {
   buildQueue,
   isSpent,
 } from "@/lib/operator";
-import { playFor } from "@/lib/plays";
-import { scoreBoard } from "@/lib/risk";
-import { countTiers } from "@/lib/stats";
+import { resolutionFor } from "@/lib/resolution";
+import { projectArrival } from "@/lib/risk";
+import { assemblyLoad, countTiers, inboundShare, openIssues } from "@/lib/stats";
+import { triageBoard } from "@/lib/triage";
 
 /**
  * The working surface.
  *
- * One screen, because the operator has one question: what is about to fail, and what do I
- * do about it. The board is re-scored locally against the wall clock every few seconds, so
- * windows really do close and slips really do grow while it sits open.
+ * One screen, because the operator has one question: who is waiting, and what do I say.
+ * The board is re-triaged locally against the wall clock every few seconds, so the waits
+ * really do grow while it sits open.
  *
- * Operator state (taken, snoozed, resolved) is held here and nowhere else — this is a
- * prototype with no persistence, which is a stated cut rather than an oversight. See README.
+ * Operator state (taken, snoozed, resolved) is held here and nowhere else — a prototype
+ * with no persistence, which is a stated cut rather than an oversight. See README.
  */
-/** How often the board is re-scored against the wall clock. */
+
+/** How often the board is re-triaged against the wall clock. */
 const CLOCK_TICK_MS = 5_000;
 
 export function Radar({ initialSnapshot }: { initialSnapshot: OperationSnapshot }) {
@@ -72,23 +75,33 @@ export function Radar({ initialSnapshot }: { initialSnapshot: OperationSnapshot 
   }, []);
 
   const board = useMemo(
-    () => scoreBoard({ ...snapshot, now: new Date(nowMs).toISOString() }),
+    () => triageBoard({ ...snapshot, now: new Date(nowMs).toISOString() }),
     [snapshot, nowMs],
   );
 
   const counts = useMemo(() => countTiers(board), [board]);
-  const fullQueue = useMemo(() => buildQueue(board, dispositions, nowMs), [board, dispositions, nowMs]);
+  const load = useMemo(() => assemblyLoad(board), [board]);
+  const inbound = useMemo(() => inboundShare(board), [board]);
+  const openCount = useMemo(() => openIssues(board).length, [board]);
+
+  const fullQueue = useMemo(
+    () => buildQueue(board, dispositions, nowMs),
+    [board, dispositions, nowMs],
+  );
 
   const queue = useMemo(
     () =>
-      fullQueue.filter(({ scored }) => {
-        if (tierFilter !== "all" && scored.tier !== tierFilter) return false;
+      fullQueue.filter(({ triaged }) => {
+        if (tierFilter !== "all" && triaged.tier !== tierFilter) return false;
         return matchesSearch(search, {
-          consignmentNo: scored.delivery.consignmentNo,
-          consignee: scored.delivery.consignee.name,
-          address: `${scored.delivery.address.line} ${scored.delivery.address.district} ${scored.delivery.address.postcode}`,
-          driver: scored.driver ? `${scored.driver.code} ${scored.driver.name}` : "unassigned",
-          shipper: scored.shipper.name,
+          ref: triaged.issue.ref,
+          kind: KIND_LABELS[triaged.issue.kind],
+          raisedBy: triaged.issue.raisedBy.name,
+          route: triaged.route?.code ?? "",
+          driver: triaged.driver ? `${triaged.driver.code} ${triaged.driver.name}` : "",
+          consignment: triaged.delivery?.consignmentNo ?? "",
+          consignee: triaged.delivery?.consignee.name ?? "",
+          body: triaged.issue.messages.map((message) => message.body).join(" "),
         });
       }),
     [fullQueue, tierFilter, search],
@@ -99,17 +112,17 @@ export function Radar({ initialSnapshot }: { initialSnapshot: OperationSnapshot 
   // of the queue, which is where someone working top-down wants to be anyway.
   const selected = useMemo(() => {
     if (queue.length === 0) return null;
-    return queue.some(({ scored }) => scored.delivery.id === selectedId)
+    return queue.some(({ triaged }) => triaged.issue.id === selectedId)
       ? selectedId
-      : queue[0].scored.delivery.id;
+      : queue[0].triaged.issue.id;
   }, [queue, selectedId]);
 
   const commandContext: CommandContext = useMemo(
     () => ({
-      rows: queue.map(({ scored }) => ({
-        id: scored.delivery.id,
-        consignmentNo: scored.delivery.consignmentNo,
-        tier: scored.tier,
+      rows: queue.map(({ triaged }) => ({
+        id: triaged.issue.id,
+        ref: triaged.issue.ref,
+        tier: triaged.tier,
       })),
       selectedId: selected,
     }),
@@ -117,13 +130,10 @@ export function Radar({ initialSnapshot }: { initialSnapshot: OperationSnapshot 
   );
 
   const plan = useMemo(() => parseCommand(command, commandContext), [command, commandContext]);
-  const rehearsing = useMemo(
-    () => new Set(plan?.ok ? plan.affected : []),
-    [plan],
-  );
+  const rehearsing = useMemo(() => new Set(plan?.ok ? plan.affected : []), [plan]);
 
   const rowById = useCallback(
-    (id: string) => board.find((scored) => scored.delivery.id === id) ?? null,
+    (id: string) => board.find((triaged) => triaged.issue.id === id) ?? null,
     [board],
   );
 
@@ -134,32 +144,56 @@ export function Radar({ initialSnapshot }: { initialSnapshot: OperationSnapshot 
 
   const requestDraft = useCallback(
     async (id: string) => {
-      const scored = rowById(id);
-      if (!scored) return;
+      const row = rowById(id);
+      if (!row) return;
 
-      const play = playFor(scored);
-      if (!play.drafts) {
-        setStatus(`${scored.delivery.consignmentNo} needs a phone call, not a message`);
+      const resolution = resolutionFor(row);
+      if (!resolution.drafts || !resolution.audience || !resolution.language) {
+        setStatus(`${row.issue.ref} needs a phone call, not a message`);
         return;
       }
 
       setOpenId(id);
       setDrafts((current) => ({ ...current, [id]: { status: "loading" } }));
 
+      const { issue, route, driver, delivery } = row;
+      const eta = delivery
+        ? projectArrival(delivery, driver, new Date(nowMs).toISOString())
+        : null;
+      const latest = issue.messages[issue.messages.length - 1];
+
+      const recipientName =
+        resolution.audience === "driver"
+          ? (driver?.name.split(" ")[0] ?? issue.raisedBy.name)
+          : resolution.audience === "customer"
+            ? (delivery?.consignee.name.split(" ")[0] ?? issue.raisedBy.name)
+            : issue.raisedBy.name;
+
       try {
         const response = await fetch("/api/draft", {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
-            consignmentNo: scored.delivery.consignmentNo,
-            consignee: scored.delivery.consignee.name,
-            shipper: scored.shipper.name,
-            action: play.action,
-            audience: play.audience,
-            windowLabel: formatWindow(scored.delivery.windowStart, scored.delivery.windowEnd),
-            projectedLabel: scored.projectedArrival ? time(scored.projectedArrival) : null,
-            slipMinutes: scored.slipMinutes,
-            signals: scored.signals.map(({ label, detail }) => ({ label, detail })),
+            issueRef: issue.ref,
+            kind: issue.kind,
+            action: resolution.action,
+            audience: resolution.audience,
+            language: resolution.language,
+            recipientName,
+            inbound: latest?.body ?? null,
+            routeCode: route?.code ?? null,
+            routePay: route ? money(route.payCents) : null,
+            pickupLabel: route ? `${time(route.pickupAt)} · ${route.pickupLocation}` : null,
+            stopCount: route?.stopCount ?? null,
+            consignmentNo: delivery?.consignmentNo ?? null,
+            windowLabel: delivery
+              ? formatWindow(delivery.windowStart, delivery.windowEnd)
+              : null,
+            etaLabel: eta ? time(eta) : null,
+            podLabel: delivery?.podPhotoId
+              ? `${delivery.podPhotoId}, scanned ${time(delivery.lastScanAt)}`
+              : null,
+            driverCode: driver?.code ?? null,
           }),
         });
 
@@ -181,7 +215,7 @@ export function Radar({ initialSnapshot }: { initialSnapshot: OperationSnapshot 
         }));
       }
     },
-    [rowById],
+    [nowMs, rowById],
   );
 
   const commit = useCallback(
@@ -195,7 +229,7 @@ export function Radar({ initialSnapshot }: { initialSnapshot: OperationSnapshot 
             return next;
           });
           flashPressed(effect.ids);
-          setStatus(`${effect.ids.length} block(s) in your hands`);
+          setStatus(`${effect.ids.length} issue(s) in your hands`);
           break;
         }
 
@@ -207,7 +241,7 @@ export function Radar({ initialSnapshot }: { initialSnapshot: OperationSnapshot 
             return next;
           });
           flashPressed(effect.ids);
-          setStatus(`${effect.ids.length} block(s) set aside for ${effect.minutes} min`);
+          setStatus(`${effect.ids.length} issue(s) set aside for ${effect.minutes} min`);
           break;
         }
 
@@ -220,7 +254,7 @@ export function Radar({ initialSnapshot }: { initialSnapshot: OperationSnapshot 
           });
           flashPressed(effect.ids);
           setStatus(
-            `${effect.ids.length} block(s) closed — ${RESOLVE_REASONS[effect.reason].toLowerCase()}`,
+            `${effect.ids.length} issue(s) closed — ${RESOLVE_REASONS[effect.reason].toLowerCase()}`,
           );
           if (effect.ids.includes(openId ?? "")) setOpenId(null);
           break;
@@ -232,7 +266,7 @@ export function Radar({ initialSnapshot }: { initialSnapshot: OperationSnapshot 
 
         case "filter":
           setTierFilter(effect.tier);
-          setStatus(effect.tier === "all" ? "Showing the whole sheet" : `Showing ${effect.tier} only`);
+          setStatus(effect.tier === "all" ? "Showing everything" : `Showing ${effect.tier} only`);
           break;
 
         case "find":
@@ -257,9 +291,9 @@ export function Radar({ initialSnapshot }: { initialSnapshot: OperationSnapshot 
   const move = useCallback(
     (delta: number) => {
       if (queue.length === 0) return;
-      const index = queue.findIndex(({ scored }) => scored.delivery.id === selected);
+      const index = queue.findIndex(({ triaged }) => triaged.issue.id === selected);
       const next = Math.min(queue.length - 1, Math.max(0, (index === -1 ? 0 : index) + delta));
-      const id = queue[next].scored.delivery.id;
+      const id = queue[next].triaged.issue.id;
       setSelectedId(id);
       document
         .querySelector<HTMLElement>(`[data-block-id="${id}"]`)
@@ -388,14 +422,15 @@ export function Radar({ initialSnapshot }: { initialSnapshot: OperationSnapshot 
 
   return (
     <div className="sheet">
-      <div className="perforation" aria-hidden="true" />
-
       <div className="column">
         <Masthead
           now={new Date(nowMs).toISOString()}
           counts={counts}
           shift={snapshot.shift}
-          queueLength={fullQueue.length}
+          openCount={openCount}
+          inbound={inbound}
+          lookups={load.lookups}
+          systems={load.systems}
         />
 
         <CommandRule
@@ -430,7 +465,7 @@ export function Radar({ initialSnapshot }: { initialSnapshot: OperationSnapshot 
                 “{search}”
               </Key>
             )}
-            <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10 }}>
               {spentCount > 0 && (
                 <span className="cap" style={{ display: "inline" }}>
                   {spentCount} closed this session
@@ -446,27 +481,27 @@ export function Radar({ initialSnapshot }: { initialSnapshot: OperationSnapshot 
         <main className="manifest">
           {queue.length === 0 ? (
             <div className="empty">
-              <span className="empty__stamp">Nothing at risk</span>
+              <span className="empty__stamp">Inbox clear</span>
               <p className="empty__text">
                 {fullQueue.length === 0
-                  ? "Every delivery on the board is projecting inside its window, with no stalled vehicles and nobody chasing us. The queue fills itself when that stops being true."
-                  : "Nothing matches the current filter. Press Esc to put the whole sheet back."}
+                  ? "Nobody is waiting on us: no driver stuck at a pickup, no consignee chasing an order, nothing flagged by the ops board. The queue fills itself when that stops being true."
+                  : "Nothing matches the current filter. Press Esc to put everything back."}
               </p>
             </div>
           ) : (
-            queue.map(({ scored, disposition }, index) => (
-              <div key={scored.delivery.id} data-block-id={scored.delivery.id}>
-                <ManifestBlock
-                  row={scored}
+            queue.map(({ triaged, disposition }, index) => (
+              <div key={triaged.issue.id} data-block-id={triaged.issue.id}>
+                <IssueBlock
+                  row={triaged}
                   seq={index + 1}
                   disposition={disposition}
                   nowMs={nowMs}
-                  selected={scored.delivery.id === selected}
-                  rehearsing={rehearsing.has(scored.delivery.id)}
+                  selected={triaged.issue.id === selected}
+                  rehearsing={rehearsing.has(triaged.issue.id)}
                   ghost={plan?.ghost ?? null}
-                  pressed={pressedIds.includes(scored.delivery.id)}
-                  onSelect={() => setSelectedId(scored.delivery.id)}
-                  onOpen={() => setOpenId(scored.delivery.id)}
+                  pressed={pressedIds.includes(triaged.issue.id)}
+                  onSelect={() => setSelectedId(triaged.issue.id)}
+                  onOpen={() => setOpenId(triaged.issue.id)}
                 />
               </div>
             ))
@@ -475,21 +510,22 @@ export function Radar({ initialSnapshot }: { initialSnapshot: OperationSnapshot 
       </div>
 
       {openRow && (
-        <CarbonCopy
+        <ContextSheet
           row={openRow}
           disposition={
-            fullQueue.find(({ scored }) => scored.delivery.id === openRow.delivery.id)
-              ?.disposition ?? { kind: "open" }
+            fullQueue.find(({ triaged }) => triaged.issue.id === openRow.issue.id)?.disposition ?? {
+              kind: "open",
+            }
           }
-          draft={drafts[openRow.delivery.id]}
+          draft={drafts[openRow.issue.id]}
           nowMs={nowMs}
           onClose={() => setOpenId(null)}
-          onTake={() => commit({ kind: "take", ids: [openRow.delivery.id] })}
-          onSnooze={() => commit({ kind: "snooze", ids: [openRow.delivery.id], minutes: 15 })}
+          onTake={() => commit({ kind: "take", ids: [openRow.issue.id] })}
+          onSnooze={() => commit({ kind: "snooze", ids: [openRow.issue.id], minutes: 15 })}
           onResolve={(reason: ResolveReason) =>
-            commit({ kind: "resolve", ids: [openRow.delivery.id], reason })
+            commit({ kind: "resolve", ids: [openRow.issue.id], reason })
           }
-          onDraft={() => void requestDraft(openRow.delivery.id)}
+          onDraft={() => void requestDraft(openRow.issue.id)}
         />
       )}
 
@@ -497,9 +533,9 @@ export function Radar({ initialSnapshot }: { initialSnapshot: OperationSnapshot 
 
       <p className="sr-only" role="status" aria-live="polite">
         {status ?? ""}
-        {queue.length > 0 && ` ${queue.length} blocks on the sheet.`}
-        {snapshot.shift.medianLeadTimeMin > 0 &&
-          ` Median lead time ${duration(snapshot.shift.medianLeadTimeMin)}.`}
+        {queue.length > 0 && ` ${queue.length} issues in the queue.`}
+        {snapshot.shift.medianFirstReplyMin > 0 &&
+          ` Median wait ${duration(snapshot.shift.medianFirstReplyMin)}.`}
       </p>
     </div>
   );

@@ -1,31 +1,45 @@
 /**
- * Message drafting — the one place an LLM earns its keep here.
+ * Drafting the reply.
  *
- * The split is deliberate. Deciding *what* is wrong and *what to do* is the risk engine's
- * job: it has to be deterministic, testable and explainable. Writing the sentence that
- * goes to an upset customer is language work, which is what a model is actually good at.
+ * Deciding what an issue is, how urgent it is, and what the move should be is the job of
+ * `classify.ts`, `triage.ts` and `resolution.ts` — deterministic, testable, explainable.
+ * Writing the sentence that goes back to a driver who has been waiting 23 minutes is
+ * language work, which is what a model is good at. So the model drafts, and nothing else.
  *
- * Every draft has a template behind it. An ops tool cannot have a dead button, so a
- * missing API key, a rate limit or a refusal degrades to the template rather than failing
- * — the operator still gets something to send, and the UI says which they got.
+ * Replies go out in the recipient's language: Spanish to drivers and consignees, English
+ * to the shipper's account team. One language per audience, never a mix.
+ *
+ * Every draft has a template behind it. A missing API key, a rate limit or a refusal
+ * degrades to the template rather than failing, because an ops tool cannot have a dead
+ * button when somebody is waiting on an answer.
  */
 
-import type { PlayAction } from "./plays";
+import type { IssueKind } from "./domain";
+import type { ResolutionAction } from "./resolution";
+
+export type DraftLanguage = "es" | "en";
+export type DraftAudience = "driver" | "customer" | "business";
 
 export interface DraftRequest {
-  consignmentNo: string;
-  consignee: string;
-  shipper: string;
-  action: PlayAction;
-  audience: "consignee" | "shipper" | "driver";
-  /** Promised window, pre-formatted: "11:00–13:00". */
-  windowLabel: string;
-  /** Revised arrival, pre-formatted, when there is one. */
-  projectedLabel: string | null;
-  /** Minutes past the promised window. */
-  slipMinutes: number | null;
-  /** The signals that fired, heaviest first. */
-  signals: { label: string; detail: string }[];
+  issueRef: string;
+  kind: IssueKind;
+  action: ResolutionAction;
+  audience: DraftAudience;
+  language: DraftLanguage;
+  recipientName: string;
+  /** The message being replied to, when there is one. */
+  inbound: string | null;
+  routeCode: string | null;
+  /** Pre-formatted, e.g. "€42.00". */
+  routePay: string | null;
+  /** Pre-formatted, e.g. "09:15 · Hub Vallecas". */
+  pickupLabel: string | null;
+  stopCount: number | null;
+  consignmentNo: string | null;
+  windowLabel: string | null;
+  etaLabel: string | null;
+  podLabel: string | null;
+  driverCode: string | null;
 }
 
 export type DraftSource = "model" | "template";
@@ -39,164 +53,216 @@ export interface DraftResult {
 
 const LIMITS = {
   text: 120,
-  signals: 8,
-  signalText: 160,
-  outputChars: 600,
+  inbound: 600,
+  outputChars: 700,
 } as const;
 
 function clip(value: unknown, max: number): string {
   return typeof value === "string" ? value.trim().slice(0, max) : "";
 }
 
+function optional(value: unknown, max: number): string | null {
+  const text = clip(value, max);
+  return text === "" ? null : text;
+}
+
 /**
  * Validate and clamp whatever arrived on the wire.
  *
- * The browser supplies this payload, which is only acceptable because the feed itself is
- * synthetic. Against a real dispatch system the route would look the delivery up server
- * side by id and build the prompt from trusted rows — a client that can dictate prompt
- * contents can dictate the message that goes to a customer.
+ * The browser supplies this payload, which is only acceptable because the feed is
+ * synthetic. Against real systems the route would look the issue up server side by id and
+ * build the prompt from trusted rows — a client that can dictate prompt contents can
+ * dictate what gets sent to a driver.
  */
 export function parseDraftRequest(body: unknown): DraftRequest | null {
   if (typeof body !== "object" || body === null) return null;
   const raw = body as Record<string, unknown>;
 
-  const consignmentNo = clip(raw.consignmentNo, 32);
-  const action = clip(raw.action, 32) as PlayAction;
-  if (!consignmentNo || !action) return null;
+  const issueRef = clip(raw.issueRef, 32);
+  const action = clip(raw.action, 32) as ResolutionAction;
+  if (!issueRef || !action) return null;
 
   const audience = clip(raw.audience, 16);
-  if (audience !== "consignee" && audience !== "shipper" && audience !== "driver") {
+  if (audience !== "driver" && audience !== "customer" && audience !== "business") {
     return null;
   }
 
-  // Deliberately not `Number(...)`: that turns null into 0, which would quietly convert
-  // "we cannot project an arrival" into "arriving exactly on time".
-  const slipMinutes =
-    typeof raw.slipMinutes === "number" && Number.isFinite(raw.slipMinutes)
-      ? Math.round(raw.slipMinutes)
+  const language = clip(raw.language, 4);
+  if (language !== "es" && language !== "en") return null;
+
+  const stopCount =
+    typeof raw.stopCount === "number" && Number.isFinite(raw.stopCount)
+      ? Math.round(raw.stopCount)
       : null;
 
   return {
-    consignmentNo,
-    consignee: clip(raw.consignee, LIMITS.text) || "there",
-    shipper: clip(raw.shipper, LIMITS.text) || "the shipper",
+    issueRef,
+    kind: (clip(raw.kind, 48) || "unknown") as IssueKind,
     action,
     audience,
-    windowLabel: clip(raw.windowLabel, 32) || "the agreed window",
-    projectedLabel: clip(raw.projectedLabel, 32) || null,
-    slipMinutes,
-    signals: Array.isArray(raw.signals)
-      ? raw.signals.slice(0, LIMITS.signals).flatMap((entry) => {
-          if (typeof entry !== "object" || entry === null) return [];
-          const item = entry as Record<string, unknown>;
-          const label = clip(item.label, 48);
-          if (!label) return [];
-          return [{ label, detail: clip(item.detail, LIMITS.signalText) }];
-        })
-      : [],
+    language,
+    recipientName: clip(raw.recipientName, LIMITS.text) || (language === "es" ? "hola" : "there"),
+    inbound: optional(raw.inbound, LIMITS.inbound),
+    routeCode: optional(raw.routeCode, 16),
+    routePay: optional(raw.routePay, 16),
+    pickupLabel: optional(raw.pickupLabel, 64),
+    stopCount,
+    consignmentNo: optional(raw.consignmentNo, 32),
+    windowLabel: optional(raw.windowLabel, 32),
+    etaLabel: optional(raw.etaLabel, 32),
+    podLabel: optional(raw.podLabel, 64),
+    driverCode: optional(raw.driverCode, 16),
   };
 }
 
-/** The floor every draft is measured against, and the fallback when the model is unavailable. */
+/** The floor every draft is measured against, and the fallback when the model is away. */
 export function templateFor(request: DraftRequest): string {
-  const { consignee, consignmentNo, shipper, windowLabel, projectedLabel } = request;
-  const late = request.slipMinutes !== null && request.slipMinutes > 0 ? request.slipMinutes : null;
+  const {
+    recipientName: name,
+    routeCode,
+    routePay,
+    pickupLabel,
+    stopCount,
+    consignmentNo,
+    etaLabel,
+    podLabel,
+  } = request;
+
+  const route = routeCode ?? "la ruta";
+  const parcel = consignmentNo ?? "tu pedido";
 
   switch (request.action) {
-    case "notify_consignee":
+    case "resend_route":
       return [
-        `Hi ${consignee} — Vamo here about your ${shipper} delivery ${consignmentNo}.`,
-        late
-          ? `We are running about ${late} minutes behind the ${windowLabel} window.`
-          : `We are running behind the ${windowLabel} window.`,
-        projectedLabel ? `The driver now expects to be with you around ${projectedLabel}.` : "",
-        "Sorry about that. Reply here if that no longer works and we will rebook you.",
+        `Hola ${name}, acabo de reenviarte la ruta ${route} a la app.`,
+        "Cierra la aplicación y vuelve a abrirla; debería aparecerte ya.",
+        "Si en dos minutos sigue sin salir, dímelo por aquí y la gestiono yo.",
+      ].join(" ");
+
+    case "answer_pay":
+      return [
+        `Hola ${name}, la ruta ${route} paga ${routePay ?? "la tarifa estándar"}`,
+        stopCount ? ` por ${stopCount} paradas` : "",
+        pickupLabel ? `, con recogida ${pickupLabel}` : "",
+        ". El importe se abona con la liquidación de la semana.",
       ]
-        .filter(Boolean)
-        .join(" ");
+        .join("")
+        .replace(" .", ".");
 
-    case "reply_consignee":
+    case "escalate_payroll":
       return [
-        `Hi ${consignee} — Vamo here, sorry for the wait on ${consignmentNo}.`,
-        projectedLabel
-          ? `The driver is on the way and should reach you around ${projectedLabel}.`
-          : "The driver is on the way and we are tracking it now.",
-        "Thanks for bearing with us.",
+        `Hola ${name}, tienes razón en que hay que revisarlo.`,
+        `He pasado la ruta ${route} a nóminas con el registro adjunto.`,
+        "Te confirmo hoy mismo qué ha pasado con la diferencia.",
       ].join(" ");
 
-    case "reschedule":
+    case "offer_route":
       return [
-        `Hi ${consignee} — Vamo here. We tried to deliver ${consignmentNo} today and could not complete it.`,
-        "We would rather not leave it sitting: reply with a day that suits you and we will book the redelivery.",
-      ].join(" ");
+        `Ruta ${route} disponible`,
+        stopCount ? `: ${stopCount} paradas` : "",
+        routePay ? `, ${routePay}` : "",
+        pickupLabel ? `, recogida ${pickupLabel}` : "",
+        ". ¿La coges? Responde y te la asigno.",
+      ]
+        .join("")
+        .replace(" .", ".");
+
+    case "send_eta":
+      return [
+        `Hola ${name}, ${parcel} va en camino`,
+        etaLabel ? ` y el repartidor llega sobre las ${etaLabel}` : "",
+        ". Perdona la espera; si a esa hora ya no te viene bien, dímelo y lo reprogramamos.",
+      ]
+        .join("")
+        .replace(" .", ".");
 
     case "confirm_address":
       return [
-        `Hi ${consignee} — Vamo here about ${consignmentNo}, due ${windowLabel}.`,
-        "We have had trouble at this address before, so before the driver sets off: can you confirm the street number and the flat or unit?",
+        `Hola ${name}, para que no falle la entrega de ${parcel}:`,
+        "¿me confirmas la dirección completa, con piso y puerta?",
+        "Se la paso al repartidor antes de que salga hacia allí.",
       ].join(" ");
 
     case "request_access":
       return [
-        `Hi ${consignee} — Vamo here about ${consignmentNo}, due ${windowLabel}.`,
-        "The building needs an entry code and we do not have one on file. Can you send the code, or the buzzer name, so the driver can get in?",
+        `Hola ${name}, el repartidor está en el portal con ${parcel} y no consigue entrar.`,
+        "¿Me pasas el código de acceso o el nombre del timbre?",
+        "En cuanto me lo digas se lo doy y sube.",
       ].join(" ");
 
-    case "flag_account":
+    case "send_pod":
       return [
-        `${shipper} — heads up on consignment ${consignmentNo}, promised ${windowLabel}.`,
-        late
-          ? `It is currently projecting about ${late} minutes past the window.`
-          : "It is showing early warning signs on our board.",
-        "Nothing is lost yet and we are working it. Flagging it now because of the penalty window on your account.",
+        `Proof of delivery for ${consignmentNo ?? "the consignment"} attached`,
+        podLabel ? `: ${podLabel}` : "",
+        ". Let us know if you need the signature record as well.",
+      ]
+        .join("")
+        .replace(" .", ".");
+
+    case "triage_list":
+      return [
+        `Thanks — we have your list and we are on it.`,
+        "We are splitting it into individual cases so each one gets its own owner and clock,",
+        "and we will come back to you on each rather than in one lump.",
       ].join(" ");
 
     default:
-      return `Consignment ${consignmentNo}: no outbound message is needed for this play.`;
+      return `${request.issueRef}: this one is a phone call, not a message.`;
   }
 }
 
-const SYSTEM_PROMPT = `You write short outbound messages for the operations team of Vamo, a last-mile delivery company.
+const SYSTEM_PROMPT = `You write short replies for the operations team of Vamo, a last-mile delivery company.
 
-The operator will read your draft, maybe tweak a word, and send it. Write it so they do not have to.
+The operator will read your draft, maybe change a word, and send it. Write it so they do not have to.
+
+Who you are writing to matters:
+- DRIVERS are colleagues, not customers. They are usually standing in a warehouse or sitting in a van, often annoyed, and they want the answer first and the apology never. Be direct and practical. Never be deferential.
+- CONSIGNEES are the public. Warm, plain, specific. Lead with the fact, not the apology.
+- BUSINESSES are account contacts. Brief and factual, no warmth required.
 
 Rules:
-- One short paragraph. Two or three sentences. Never more than 55 words.
-- Plain, warm, specific. No corporate throat-clearing, no "we apologise for any inconvenience caused", no emoji, no exclamation marks.
-- Lead with the fact the recipient needs, not with an apology.
-- Give a concrete time or a concrete question. Never promise a time you were not given.
-- Never invent a reason for the delay, a compensation offer, a discount, or a policy. If you were not told why, do not say why.
-- Never mention risk scores, signals, internal tooling, or that this was written by a model.
+- Write in the language you are told to write in. Spanish means natural peninsular Spanish, the way a Madrid ops coordinator actually texts — not translated English.
+- Two or three sentences. Never more than 55 words.
+- No corporate filler, no "lamentamos las molestias", no emoji, no exclamation marks.
+- Use only the facts you are given. Never invent a time, an amount, a reason or a policy. If you were not told why something happened, do not say why.
+- Never mention risk scores, triage, internal tooling, or that a model wrote this.
 - End with the one thing you want the recipient to do, if there is one.
-- Output only the message body. No greeting line of your own, no signature block, no quotation marks, no preamble.`;
+- Output only the message body: no subject line, no greeting of your own invention, no signature, no quotation marks, no preamble.`;
 
 export function buildPrompt(request: DraftRequest): string {
   const lines = [
-    `Write a message to the ${request.audience}.`,
+    `Write a reply to the ${request.audience}, in ${request.language === "es" ? "Spanish" : "English"}.`,
     "",
-    `Consignment: ${request.consignmentNo}`,
-    `Recipient name: ${request.consignee}`,
-    `Shipper: ${request.shipper}`,
-    `Promised window: ${request.windowLabel}`,
+    `Issue: ${request.issueRef} (${request.kind.replace(/_/g, " ")})`,
+    `Recipient: ${request.recipientName}`,
+    `The operator's intended action: ${request.action.replace(/_/g, " ")}`,
   ];
 
-  if (request.projectedLabel) {
-    lines.push(`Revised arrival we can commit to: ${request.projectedLabel}`);
-  }
-  if (request.slipMinutes !== null && request.slipMinutes > 0) {
-    lines.push(`Minutes past the promised window: ${request.slipMinutes}`);
+  if (request.inbound) {
+    lines.push("", "They wrote:", `"""${request.inbound}"""`);
   }
 
-  lines.push("", "What our system detected:");
-  for (const signal of request.signals) {
-    lines.push(`- ${signal.label}: ${signal.detail}`);
+  const facts: [string, string | number | null][] = [
+    ["Route", request.routeCode],
+    ["Route pay", request.routePay],
+    ["Stops on the route", request.stopCount],
+    ["Pickup", request.pickupLabel],
+    ["Consignment", request.consignmentNo],
+    ["Promised window", request.windowLabel],
+    ["Live ETA", request.etaLabel],
+    ["Proof of delivery on file", request.podLabel],
+    ["Driver", request.driverCode],
+  ];
+
+  const known = facts.filter(([, value]) => value !== null && value !== "");
+  if (known.length > 0) {
+    lines.push("", "Facts you may use (and must not contradict):");
+    for (const [label, value] of known) lines.push(`- ${label}: ${value}`);
   }
 
   lines.push(
     "",
-    `The operator's intended action is: ${request.action.replace(/_/g, " ")}.`,
-    "",
-    "For reference, here is the team's stock wording for this situation. Beat it — keep what is accurate, drop what is stiff:",
+    "The team's stock wording for this situation, for reference. Beat it — keep what is accurate, drop what is stiff:",
     templateFor(request),
   );
 

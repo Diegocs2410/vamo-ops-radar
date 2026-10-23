@@ -52,6 +52,11 @@ export function slip(minutes: number): string {
   return rounded > 0 ? `+${rounded}m` : `−${Math.abs(rounded)}m`;
 }
 
+/** Route pay, in the currency the operation runs in. */
+export function money(cents: number): string {
+  return `€${(cents / 100).toFixed(2)}`;
+}
+
 export function percent(value: number): string {
   return `${Math.round(value * 100)}%`;
 }

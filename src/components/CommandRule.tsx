@@ -42,7 +42,7 @@ export function CommandRule({
           spellCheck={false}
           autoComplete="off"
           aria-label="Command"
-          placeholder="take · resolve fp · snooze 20 · draft · show critical · /search"
+          placeholder="take · resolve answered · snooze 20 · draft · show critical · /search"
           onChange={(event) => onChange(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === "Enter") {

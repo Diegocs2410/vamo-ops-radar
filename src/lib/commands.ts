@@ -38,21 +38,21 @@ export interface CommandPlan {
 
 /** What the parser needs to know about the board to resolve a target. */
 export interface CommandContext {
-  rows: { id: string; consignmentNo: string; tier: RiskTier }[];
+  rows: { id: string; ref: string; tier: RiskTier }[];
   selectedId: string | null;
 }
 
 const DEFAULT_SNOOZE_MINUTES = 15;
 
 export const COMMAND_HELP: { keys: string; what: string }[] = [
-  { keys: "take", what: "Put the selected block in your hands" },
-  { keys: "resolve fp", what: "Close it as a false positive — this is what feeds precision" },
-  { keys: "resolve notified", what: "Close it: notified · rebooked · driver" },
+  { keys: "take", what: "Put the selected issue in your hands" },
+  { keys: "resolve answered", what: "Close it: answered · actioned · escalated" },
+  { keys: "resolve more", what: "Close it as having needed another system — this is the honest one" },
   { keys: "snooze 20", what: "Set it aside for N minutes" },
-  { keys: "draft", what: "Have the suggested message written" },
+  { keys: "draft", what: "Have the reply written" },
   { keys: "show critical", what: "Filter: critical · high · watch · all" },
-  { keys: "find serrano", what: "Search consignee, address, consignment or driver" },
-  { keys: "resolve fp watch", what: "Any command can target a whole tier instead of one block" },
+  { keys: "find R-412", what: "Search the ref, route, driver, consignee or message text" },
+  { keys: "resolve answered watch", what: "Any command can target a whole tier instead of one issue" },
 ];
 
 function fail(verb: string, error: string): CommandPlan {
@@ -78,9 +78,9 @@ function resolveTarget(
   context: CommandContext,
 ): { ids: string[]; label: string } | { error: string } {
   if (words.length === 0) {
-    if (!context.selectedId) return { error: "No block selected" };
+    if (!context.selectedId) return { error: "Nothing selected" };
     const row = context.rows.find((r) => r.id === context.selectedId);
-    return { ids: [context.selectedId], label: row ? row.consignmentNo : "selected block" };
+    return { ids: [context.selectedId], label: row ? row.ref : "the selected issue" };
   }
 
   const word = words[0].toLowerCase();
@@ -90,22 +90,22 @@ function resolveTarget(
     const ids =
       tier === "all" ? context.rows.map((r) => r.id) : context.rows.filter((r) => r.tier === tier).map((r) => r.id);
 
-    if (ids.length === 0) return { error: `No ${word} blocks on the sheet` };
+    if (ids.length === 0) return { error: `No ${word} issues on the sheet` };
     return {
       ids,
-      label: `${ids.length} ${tier === "all" ? "block" : word + " block"}${ids.length === 1 ? "" : "s"}`,
+      label: `${ids.length} ${tier === "all" ? "issue" : word + " issue"}${ids.length === 1 ? "" : "s"}`,
     };
   }
 
-  // A consignment number, with or without its VM- prefix.
-  const needle = word.replace(/^vm-/i, "");
+  // An issue ref, with or without its ISS- prefix.
+  const needle = word.replace(/^iss-/i, "");
   const matches = context.rows.filter((r) =>
-    r.consignmentNo.toLowerCase().replace(/^vm-/, "").includes(needle),
+    r.ref.toLowerCase().replace(/^iss-/, "").includes(needle),
   );
 
-  if (matches.length === 0) return { error: `No block matches "${words[0]}"` };
-  if (matches.length > 1) return { error: `"${words[0]}" matches ${matches.length} blocks` };
-  return { ids: [matches[0].id], label: matches[0].consignmentNo };
+  if (matches.length === 0) return { error: `Nothing matches "${words[0]}"` };
+  if (matches.length > 1) return { error: `"${words[0]}" matches ${matches.length} issues` };
+  return { ids: [matches[0].id], label: matches[0].ref };
 }
 
 export function parseCommand(input: string, context: CommandContext): CommandPlan | null {
@@ -119,7 +119,7 @@ export function parseCommand(input: string, context: CommandContext): CommandPla
     return {
       ok: true,
       verb: "FIND",
-      summary: `Filter the sheet to blocks matching "${text}"`,
+      summary: `Filter the sheet to issues matching "${text}"`,
       affected: [],
       ghost: null,
       effect: { kind: "find", text },
@@ -151,7 +151,7 @@ export function parseCommand(input: string, context: CommandContext): CommandPla
       return {
         ok: true,
         verb: "SHOW",
-        summary: tier === "all" ? "Show the whole sheet" : `Show ${tier} blocks only`,
+        summary: tier === "all" ? "Show the whole sheet" : `Show ${tier} issues only`,
         affected: [],
         ghost: null,
         effect: { kind: "filter", tier },
@@ -165,7 +165,7 @@ export function parseCommand(input: string, context: CommandContext): CommandPla
       return {
         ok: true,
         verb: "FIND",
-        summary: `Filter the sheet to blocks matching "${text}"`,
+        summary: `Filter the sheet to issues matching "${text}"`,
         affected: [],
         ghost: null,
         effect: { kind: "find", text },
@@ -188,11 +188,11 @@ export function parseCommand(input: string, context: CommandContext): CommandPla
     case "draft": {
       const target = resolveTarget(rest, context);
       if ("error" in target) return fail("DRAFT", target.error);
-      if (target.ids.length > 1) return fail("DRAFT", "Draft one block at a time");
+      if (target.ids.length > 1) return fail("DRAFT", "Draft one reply at a time");
       return {
         ok: true,
         verb: "DRAFT",
-        summary: `Write the suggested message for ${target.label}`,
+        summary: `Write the reply for ${target.label}`,
         affected: target.ids,
         ghost: null,
         effect: { kind: "draft", id: target.ids[0] },
@@ -225,7 +225,7 @@ export function parseCommand(input: string, context: CommandContext): CommandPla
       const reasonWord = (rest[0] ?? "").toLowerCase();
       const reason = RESOLVE_ALIASES[reasonWord];
       if (!reason) {
-        return fail("RESOLVE", "Resolve why? notified · rebooked · driver · fp");
+        return fail("RESOLVE", "Resolve how? answered · actioned · escalated · more");
       }
 
       const target = resolveTarget(rest.slice(1), context);
@@ -235,7 +235,7 @@ export function parseCommand(input: string, context: CommandContext): CommandPla
         verb: "RESOLVE",
         summary: `${target.label} → ${RESOLVE_REASONS[reason].toLowerCase()}`,
         affected: target.ids,
-        ghost: reason === "false_positive" ? "False positive" : "Resolved",
+        ghost: reason === "needed_more" ? "Needed more" : "Resolved",
         effect: { kind: "resolve", ids: target.ids, reason },
       };
     }
@@ -248,7 +248,7 @@ export function parseCommand(input: string, context: CommandContext): CommandPla
 /** Does this row match a free-text search? */
 export function matchesSearch(
   text: string,
-  fields: { consignmentNo: string; consignee: string; address: string; driver: string; shipper: string },
+  fields: Record<string, string>,
 ): boolean {
   const needle = text.trim().toLowerCase();
   if (needle === "") return true;

@@ -1,32 +1,41 @@
 /**
  * Synthetic operation feed.
  *
- * This is the only module that would be thrown away against a real dispatch system.
- * Everything downstream — the engine, the plays, the UI — consumes `OperationSnapshot`
- * and does not care where it came from.
+ * This is the only module that would be thrown away against real systems. Everything
+ * downstream consumes an `OperationSnapshot` and does not care where it came from.
  *
- * Two deliberate choices:
+ * Three deliberate choices:
  *
- *  1. **Seeded, not random.** A fixed PRNG means the board is identical on every
- *     request and every machine, so a screenshot, a demo and a bug report all describe
- *     the same thing.
- *  2. **Recipes, not noise.** Incidents are written out as named scenarios rather than
- *     sampled, because a demo board has to contain a legible spread of real situations.
- *     Random flags produce either a board of nothing or a board of everything.
+ *  1. **Seeded, not random.** A fixed PRNG means the board is identical on every request
+ *     and every machine, so a screenshot, a demo and a bug report describe the same thing.
+ *  2. **Recipes, not noise.** Issues are written out as named situations taken from what
+ *     the ops team says actually reaches them by hand. Sampling flags at random produces
+ *     either a board of nothing or a board of everything.
+ *  3. **The classifier does the classifying.** Inbound issues carry only a message body
+ *     and a sender; their kind and their route and stop references come from running
+ *     `classify.ts` over the text, exactly as they would in production. If a message is
+ *     written that the rules cannot read, it shows up on the board as `unknown` — which is
+ *     the honest outcome, and worth seeing.
  *
- * Times are generated relative to the request, so the manifest always reads as live.
+ * Times are generated relative to the request, so the board always reads as live.
  */
 
+import { classifyMessage, type Sender } from "./classify";
 import type {
   AddressHistory,
   ContactEvent,
   Delivery,
   Driver,
+  Issue,
+  IssueKind,
+  IssueMessage,
+  IssueSource,
   OperationSnapshot,
+  Route,
   Shipper,
 } from "./domain";
 import { computeShiftStats } from "./stats";
-import { scoreBoard } from "./risk";
+import { triageBoard } from "./triage";
 
 const SEED = 0x5a17b0;
 
@@ -64,8 +73,6 @@ const DRIVER_NAMES = [
   "Alba Sierra",
   "Rubén Calvo",
   "Noelia Ruano",
-  "Gonzalo Vega",
-  "Teresa Marín",
 ];
 
 const CONSIGNEE_NAMES = [
@@ -111,10 +118,6 @@ const CONSIGNEE_NAMES = [
   "Guillermo Pujol",
   "Lola Herranz",
   "Aitor Belmonte",
-  "Sonia Araújo",
-  "Martín Escudero",
-  "Eva Camacho",
-  "Rodrigo Nuño",
 ];
 
 const STREETS = [
@@ -140,13 +143,13 @@ const STREETS = [
   ["Calle de Ríos Rosas", "Chamberí", "28003"],
 ] as const;
 
-const CHASE_NOTES = [
-  "Asked where the parcel is, said she has to leave at 13:00",
-  "Second call today, wants a firm time",
-  "Says the driver never rang the buzzer",
-  "Working from home until 14:00 only",
-  "Asked to leave it with the portero",
-  "Wants to know if it still arrives today",
+const PICKUPS = [
+  "Hub Vallecas",
+  "Hub Villaverde",
+  "Almacén Legazpi",
+  "Hub San Blas",
+  "Almacén Méndez Álvaro",
+  "Hub Carabanchel",
 ];
 
 const CLEAN_HISTORY: AddressHistory = {
@@ -157,142 +160,278 @@ const CLEAN_HISTORY: AddressHistory = {
   accessNoteOnFile: false,
 };
 
-/**
- * A named situation on the board. `stopsAhead` and `windowEndMin` are what actually
- * drive the ETA projection, so each recipe reads as the operational story it is.
- */
-interface Recipe {
-  note: string;
-  status: Delivery["status"];
-  /** Minutes from now until the promised window closes. Negative means already past. */
-  windowEndMin: number;
-  stopsAhead?: number;
+/* ─────────────────────────── Route recipes ─────────────────────────── */
+
+interface RouteRecipe {
+  code: string;
+  driverIndex: number | null;
+  shipper: number;
+  /** Minutes from now to the pickup slot. Negative is in the past. */
+  pickupAtMin: number;
+  pickup: number;
+  stopCount: number;
+  stopsCompleted: number;
+  status: Route["status"];
+  payCents: number;
+  payStatus: Route["payStatus"];
+  /** Minutes the assigned driver has been stationary, when that matters. */
   driverStalledMin?: number;
-  /** Minutes ago for each consignee chase. */
-  chases?: number[];
-  attempts?: number;
-  history?: Partial<AddressHistory>;
-  /** Index into SHIPPERS; contract accounts are the first three. */
-  shipper?: number;
-  unassigned?: boolean;
 }
 
-const RECIPES: Recipe[] = [
+const ROUTES: RouteRecipe[] = [
   {
-    note: "Van stopped on the M-30 for 26 minutes with a contract account on board",
-    status: "en_route",
-    windowEndMin: 18,
-    stopsAhead: 5,
-    driverStalledMin: 26,
-    shipper: 0,
-  },
-  {
-    note: "Failed attempt this morning, address has failed twice before, consignee now chasing",
-    status: "attempted",
-    windowEndMin: -35,
-    stopsAhead: 2,
-    attempts: 1,
-    chases: [12, 48],
-    history: { priorFailedAttempts: 2, corrected: true },
+    code: "R-412",
+    driverIndex: 0,
     shipper: 1,
+    pickupAtMin: -35,
+    pickup: 0,
+    stopCount: 14,
+    stopsCompleted: 0,
+    status: "at_pickup",
+    payCents: 4200,
+    payStatus: "scheduled",
   },
   {
-    note: "Badly behind on the route and the consignee has called three times",
-    status: "en_route",
-    windowEndMin: -10,
-    stopsAhead: 7,
-    chases: [6, 25, 70],
+    code: "R-408",
+    driverIndex: 1,
     shipper: 3,
+    pickupAtMin: -260,
+    pickup: 1,
+    stopCount: 11,
+    stopsCompleted: 11,
+    status: "completed",
+    payCents: 3100,
+    payStatus: "paid",
   },
   {
-    note: "Pharmacy delivery, failed attempt, no entry code on file, window shutting",
-    status: "attempted",
-    windowEndMin: 22,
-    stopsAhead: 3,
-    attempts: 1,
-    history: { requiresAccessCode: true },
-    shipper: 1,
-  },
-  {
-    note: "Route is running long, furniture delivery on a penalty window",
-    status: "en_route",
-    windowEndMin: 5,
-    stopsAhead: 6,
+    code: "R-417",
+    driverIndex: 2,
     shipper: 0,
+    pickupAtMin: 95,
+    pickup: 2,
+    stopCount: 9,
+    stopsCompleted: 0,
+    status: "claimed",
+    payCents: 3600,
+    payStatus: "scheduled",
   },
   {
-    note: "Still sitting in the depot with twelve minutes of window left",
-    status: "pending",
-    windowEndMin: 12,
-    unassigned: true,
+    code: "R-421",
+    driverIndex: null,
     shipper: 2,
+    pickupAtMin: 18,
+    pickup: 3,
+    stopCount: 12,
+    stopsCompleted: 0,
+    status: "unclaimed",
+    payCents: 3900,
+    payStatus: "scheduled",
   },
   {
-    note: "Gated building, no entry code on file, driver two stops away",
-    status: "en_route",
-    windowEndMin: 14,
-    stopsAhead: 2,
-    history: { requiresAccessCode: true, missingUnit: true },
-    shipper: 2,
+    code: "R-405",
+    driverIndex: 3,
+    shipper: 0,
+    pickupAtMin: -150,
+    pickup: 4,
+    stopCount: 13,
+    stopsCompleted: 6,
+    status: "in_progress",
+    payCents: 4400,
+    payStatus: "scheduled",
+    driverStalledMin: 34,
   },
   {
-    note: "Assigned but never dispatched, window closed forty minutes ago",
-    status: "assigned",
-    windowEndMin: -40,
-    unassigned: true,
+    code: "R-430",
+    driverIndex: 4,
     shipper: 4,
+    pickupAtMin: -90,
+    pickup: 5,
+    stopCount: 10,
+    stopsCompleted: 7,
+    status: "in_progress",
+    payCents: 3300,
+    payStatus: "scheduled",
   },
   {
-    note: "Driver parked off-route for fifteen minutes, probably lunch",
-    status: "en_route",
-    windowEndMin: 40,
-    stopsAhead: 4,
-    driverStalledMin: 15,
+    code: "R-433",
+    driverIndex: 5,
     shipper: 5,
+    pickupAtMin: -40,
+    pickup: 0,
+    stopCount: 8,
+    stopsCompleted: 2,
+    status: "in_progress",
+    payCents: 2900,
+    payStatus: "scheduled",
   },
   {
-    note: "Consignee has chased twice, delivery is actually on time",
-    status: "en_route",
-    windowEndMin: 70,
-    stopsAhead: 2,
-    chases: [15, 55],
-    shipper: 4,
-  },
-  {
-    note: "Electronics on a contract account, one previous failure at this address",
-    status: "en_route",
-    windowEndMin: 95,
-    stopsAhead: 3,
-    history: { priorFailedAttempts: 1 },
+    code: "R-398",
+    driverIndex: 6,
     shipper: 2,
-  },
-  {
-    note: "Entry code missing but there is plenty of window left",
-    status: "en_route",
-    windowEndMin: 150,
-    stopsAhead: 4,
-    history: { requiresAccessCode: true },
-    shipper: 3,
-  },
-  {
-    note: "No unit number on a twelve-floor block",
-    status: "assigned",
-    windowEndMin: 180,
-    stopsAhead: 8,
-    history: { missingUnit: true },
-    shipper: 5,
-  },
-  {
-    note: "Routine contract delivery, nothing wrong yet",
-    status: "en_route",
-    windowEndMin: 210,
-    stopsAhead: 5,
-    shipper: 1,
+    pickupAtMin: -310,
+    pickup: 1,
+    stopCount: 9,
+    stopsCompleted: 9,
+    status: "completed",
+    payCents: 3400,
+    payStatus: "paid",
   },
 ];
 
-/** How many comfortable deliveries pad the board out. */
-const FILLER_COUNT = 32;
+/* ─────────────────────────── Issue recipes ─────────────────────────── */
+
+interface IssueRecipe {
+  source: IssueSource;
+  /** Minutes ago the issue arrived. */
+  openedMin: number;
+  /** Set only for `source: "detected"` — their ops board labels its own flags. */
+  detectedKind?: IssueKind;
+  /** The inbound message, verbatim. Its kind and references come from the classifier. */
+  body?: string;
+  sender?: Sender;
+  /** Who raised it: a driver index, or a name for a customer/business. */
+  driverIndex?: number;
+  raisedByName?: string;
+  /** Explicit links, used only when the classifier finds no reference in the text. */
+  routeCode?: string;
+  consignmentIndex?: number;
+  answeredMinAgo?: number;
+  slack?: { channel: string; replies: number };
+  /** Earlier turns of the same thread. */
+  priorMessages?: { minutesAgo: number; from: IssueMessage["from"]; body: string }[];
+}
+
+const ISSUES: IssueRecipe[] = [
+  {
+    // Driver cannot start. Fourteen stops frozen behind one unanswered text.
+    source: "driver_sms",
+    openedMin: 23,
+    sender: "driver",
+    driverIndex: 0,
+    body: "Buenas, no me aparece la ruta de hoy en la app. Llevo 20 min en el hub esperando. R-412",
+  },
+  {
+    // Pay disputes are a supply problem wearing a support ticket's clothes.
+    source: "driver_sms",
+    openedMin: 71,
+    sender: "driver",
+    driverIndex: 1,
+    body: "Oye la R-408 me pagaron 22€ y eran 31€. Me pagaron de menos otra vez, ¿me lo podéis mirar?",
+    slack: { channel: "#ops-pagos", replies: 4 },
+  },
+  {
+    source: "detected",
+    openedMin: 12,
+    detectedKind: "route_unclaimed",
+    routeCode: "R-421",
+    raisedByName: "Dispatch board",
+  },
+  {
+    source: "driver_sms",
+    openedMin: 16,
+    sender: "driver",
+    driverIndex: 5,
+    body: "En el almacén me faltan 3 bolsas, me dieron solo 11 y la lista dice 14. ¿Qué hago?",
+    priorMessages: [
+      { minutesAgo: 18, from: "driver", body: "Ya estoy en la recogida" },
+    ],
+  },
+  {
+    source: "detected",
+    openedMin: 34,
+    detectedKind: "stalled_driver",
+    routeCode: "R-405",
+    raisedByName: "Dispatch board",
+    slack: { channel: "#ops-madrid", replies: 2 },
+  },
+  {
+    // The one that should take fifteen seconds and currently takes a lookup.
+    source: "driver_sms",
+    openedMin: 8,
+    sender: "driver",
+    driverIndex: 2,
+    body: "¿Cuánto paga la R-417? Para saber si la cojo",
+  },
+  {
+    source: "customer_sms",
+    openedMin: 41,
+    sender: "customer",
+    raisedByName: "Marta Ibáñez",
+    consignmentIndex: 0,
+    body: "¿Dónde está mi pedido VM-480200? Sigue sin llegar y me tengo que ir a las 14:00",
+    priorMessages: [
+      { minutesAgo: 95, from: "customer", body: "Buenos días, ¿a qué hora llega el pedido?" },
+      { minutesAgo: 90, from: "ops", body: "Entre las 12 y las 14, le avisamos" },
+    ],
+  },
+  {
+    source: "customer_call",
+    openedMin: 19,
+    sender: "customer",
+    raisedByName: "Javier Soler",
+    consignmentIndex: 1,
+    body: "Llamada: dice que el repartidor no puede entrar, necesita el código del portal. VM-480201",
+  },
+  {
+    source: "customer_sms",
+    openedMin: 54,
+    sender: "customer",
+    raisedByName: "Carmen Rueda",
+    consignmentIndex: 2,
+    body: "La dirección está mal, es el 4º izquierda y no el 2º. ¿Lo podéis cambiar antes de que venga?",
+  },
+  {
+    source: "business_email",
+    openedMin: 63,
+    sender: "business",
+    raisedByName: "Nórdica Muebles",
+    consignmentIndex: 3,
+    body: "Necesitamos la prueba de entrega del VM-480203 para cerrar la incidencia con el cliente.",
+  },
+  {
+    source: "business_email",
+    openedMin: 128,
+    sender: "business",
+    raisedByName: "Kioma Electrónica",
+    body: "Adjunto el listado de incidencias de ayer, son varios pedidos que no cuadran.",
+    answeredMinAgo: 40,
+    slack: { channel: "#cuentas", replies: 7 },
+  },
+  {
+    source: "detected",
+    openedMin: 27,
+    detectedKind: "late_pickup",
+    routeCode: "R-433",
+    raisedByName: "Dispatch board",
+  },
+  {
+    source: "detected",
+    openedMin: 9,
+    detectedKind: "delivered_far_from_address",
+    routeCode: "R-430",
+    consignmentIndex: 4,
+    raisedByName: "Dispatch board",
+  },
+  {
+    // Deliberately unreadable by the rules: the honest blank is worth demonstrating.
+    source: "driver_sms",
+    openedMin: 6,
+    sender: "driver",
+    driverIndex: 4,
+    body: "Oye una cosa, lo de ayer al final cómo quedó? 🙂",
+  },
+  {
+    source: "driver_call",
+    openedMin: 86,
+    sender: "driver",
+    driverIndex: 3,
+    body: "Llamada: pregunta por qué no le salen rutas desde el lunes, dice que no figura ninguna.",
+    answeredMinAgo: 52,
+  },
+];
+
+/** Deliveries that are not tied to an issue, so the routes have real weight behind them. */
+const FILLER_COUNT = 34;
 
 export function buildSnapshot(nowIso = new Date().toISOString()): OperationSnapshot {
   const random = prng(SEED);
@@ -301,9 +440,12 @@ export function buildSnapshot(nowIso = new Date().toISOString()): OperationSnaps
     new Date(now + minutesFromNow * 60_000).toISOString();
   const pick = <T,>(list: readonly T[], i: number) => list[i % list.length];
 
+  /* Drivers */
   const drivers: Record<string, Driver> = {};
+  const driverIds: string[] = [];
   DRIVER_NAMES.forEach((name, i) => {
     const id = `drv_${String(i + 1).padStart(2, "0")}`;
+    driverIds.push(id);
     drivers[id] = {
       id,
       code: `V-${String(7 + i * 3).padStart(2, "0")}`,
@@ -315,11 +457,47 @@ export function buildSnapshot(nowIso = new Date().toISOString()): OperationSnaps
       atStopGeofence: false,
     };
   });
-  const driverIds = Object.keys(drivers);
 
   const shippers: Record<string, Shipper> = {};
   for (const shipper of SHIPPERS) shippers[shipper.id] = shipper;
 
+  /* Routes */
+  const routes: Record<string, Route> = {};
+  const routeByCode: Record<string, Route> = {};
+  ROUTES.forEach((recipe, i) => {
+    const id = `rte_${String(i + 1).padStart(2, "0")}`;
+    const driverId = recipe.driverIndex === null ? null : driverIds[recipe.driverIndex];
+
+    if (driverId && recipe.driverStalledMin !== undefined) {
+      const driver = drivers[driverId];
+      driver.status = "stopped";
+      driver.minutesSinceMovement = recipe.driverStalledMin;
+      driver.lastPingAt = iso(-recipe.driverStalledMin);
+      driver.atStopGeofence = false;
+    }
+
+    const route: Route = {
+      id,
+      code: recipe.code,
+      driverId,
+      shipperId: SHIPPERS[recipe.shipper].id,
+      pickupAt: iso(recipe.pickupAtMin),
+      pickupLocation: pick(PICKUPS, recipe.pickup),
+      stopCount: recipe.stopCount,
+      stopsCompleted: recipe.stopsCompleted,
+      status: recipe.status,
+      payCents: recipe.payCents,
+      payStatus: recipe.payStatus,
+    };
+    routes[id] = route;
+    routeByCode[recipe.code] = route;
+  });
+
+  const activeRoutes = Object.values(routes).filter(
+    (route) => route.status !== "completed" && route.status !== "cancelled",
+  );
+
+  /* Deliveries */
   const deliveries: Delivery[] = [];
   let consignment = 480_200;
   let nameCursor = 0;
@@ -327,93 +505,191 @@ export function buildSnapshot(nowIso = new Date().toISOString()): OperationSnaps
 
   const nextAddress = () => {
     const [line, district, postcode] = pick(STREETS, streetCursor++);
-    const number = 2 + Math.floor(random() * 180);
-    return { line: `${line} ${number}`, district, postcode };
+    return {
+      line: `${line} ${2 + Math.floor(random() * 180)}`,
+      district,
+      postcode,
+    };
   };
 
-  const makeContacts = (chases: number[] | undefined): ContactEvent[] =>
-    (chases ?? []).map((minutesAgo, i) => ({
-      at: iso(-minutesAgo),
-      channel: i % 2 === 0 ? "whatsapp" : "call",
-      from: "consignee",
-      note: pick(CHASE_NOTES, i + streetCursor),
-    }));
+  /**
+   * The first few deliveries are the ones issues point at, so their state matches the
+   * story the message tells.
+   */
+  const FEATURED: {
+    routeCode: string;
+    status: Delivery["status"];
+    windowEndMin: number;
+    stopsAhead: number;
+    contacts?: number[];
+    history?: Partial<AddressHistory>;
+    pod?: boolean;
+  }[] = [
+    { routeCode: "R-430", status: "en_route", windowEndMin: 12, stopsAhead: 2, contacts: [41, 95] },
+    { routeCode: "R-430", status: "en_route", windowEndMin: 25, stopsAhead: 1, history: { requiresAccessCode: true } },
+    { routeCode: "R-433", status: "assigned", windowEndMin: 140, stopsAhead: 5, history: { corrected: true } },
+    { routeCode: "R-398", status: "delivered", windowEndMin: -180, stopsAhead: 0, pod: true },
+    { routeCode: "R-430", status: "delivered", windowEndMin: -45, stopsAhead: 0, pod: true },
+  ];
 
-  // The incidents, written out as scenarios.
-  RECIPES.forEach((recipe, i) => {
-    const driverId = recipe.unassigned ? null : pick(driverIds, i);
-    if (driverId) {
-      const driver = drivers[driverId];
-      if (recipe.driverStalledMin !== undefined) {
-        driver.status = "stopped";
-        driver.minutesSinceMovement = recipe.driverStalledMin;
-        driver.lastPingAt = iso(-recipe.driverStalledMin);
-        driver.atStopGeofence = false;
-      }
-    }
+  FEATURED.forEach((spec, i) => {
+    const route = routeByCode[spec.routeCode];
+    const contacts: ContactEvent[] = (spec.contacts ?? []).map((minutesAgo, n) => ({
+      at: iso(-minutesAgo),
+      channel: n % 2 === 0 ? "whatsapp" : "call",
+      from: "consignee",
+      note: "Asked where the parcel is",
+    }));
 
     deliveries.push({
       id: `dlv_${String(i + 1).padStart(3, "0")}`,
       consignmentNo: `VM-${consignment++}`,
+      routeId: route.id,
       consignee: {
         name: pick(CONSIGNEE_NAMES, nameCursor++),
         phone: `+34 6${String(20 + i).padStart(2, "0")} ${String(300 + i * 11).slice(0, 3)} ${String(400 + i * 17).slice(0, 3)}`,
       },
       address: nextAddress(),
-      shipperId: SHIPPERS[recipe.shipper ?? i % SHIPPERS.length].id,
-      driverId,
-      status: recipe.status,
-      stopsAhead: recipe.stopsAhead ?? 1,
-      windowStart: iso(recipe.windowEndMin - 120),
-      windowEnd: iso(recipe.windowEndMin),
-      attempts: recipe.attempts ?? 0,
-      contacts: makeContacts(recipe.chases),
-      addressHistory: { ...CLEAN_HISTORY, ...recipe.history },
+      shipperId: route.shipperId,
+      driverId: route.driverId,
+      status: spec.status,
+      stopsAhead: spec.stopsAhead,
+      windowStart: iso(spec.windowEndMin - 120),
+      windowEnd: iso(spec.windowEndMin),
+      attempts: 0,
+      contacts,
+      addressHistory: { ...CLEAN_HISTORY, ...spec.history },
       lastScanAt: iso(-20 - Math.floor(random() * 90)),
+      podPhotoId: spec.pod ? `IMG-${7100 + i}` : null,
     });
   });
 
-  // The rest of the day: deliveries that are fine, which is what most of them are.
   for (let i = 0; i < FILLER_COUNT; i++) {
-    const delivered = i % 3 === 0;
-    const driverId = pick(driverIds, i + 5);
-    const windowEndMin = delivered ? -60 - i * 7 : 120 + i * 11;
+    const route = pick(activeRoutes, i);
+    const delivered = i % 4 === 0;
+    const windowEndMin = delivered ? -60 - i * 6 : 20 + i * 9;
 
     deliveries.push({
-      id: `dlv_${String(RECIPES.length + i + 1).padStart(3, "0")}`,
+      id: `dlv_${String(FEATURED.length + i + 1).padStart(3, "0")}`,
       consignmentNo: `VM-${consignment++}`,
+      routeId: route.id,
       consignee: {
         name: pick(CONSIGNEE_NAMES, nameCursor++),
         phone: `+34 6${String(40 + i).padStart(2, "0")} ${String(500 + i * 9).slice(0, 3)} ${String(600 + i * 19).slice(0, 3)}`,
       },
       address: nextAddress(),
-      shipperId: SHIPPERS[(i + 2) % SHIPPERS.length].id,
-      driverId,
-      status: delivered ? "delivered" : i % 4 === 1 ? "assigned" : "en_route",
-      stopsAhead: delivered ? 0 : 2 + (i % 8),
+      shipperId: route.shipperId,
+      driverId: route.driverId,
+      status: delivered ? "delivered" : i % 3 === 1 ? "assigned" : "en_route",
+      stopsAhead: delivered ? 0 : 1 + (i % 7),
       windowStart: iso(windowEndMin - 120),
       windowEnd: iso(windowEndMin),
       attempts: 0,
       contacts: [],
       addressHistory: CLEAN_HISTORY,
       lastScanAt: iso(-10 - Math.floor(random() * 120)),
+      podPhotoId: delivered ? `IMG-${7200 + i}` : null,
     });
   }
 
+  /* Issues */
+  const issues: Issue[] = ISSUES.map((recipe, i) => {
+    const driver = recipe.driverIndex === undefined ? null : drivers[driverIds[recipe.driverIndex]];
+
+    // Inbound issues are classified from their text, exactly as they would be live.
+    const classified =
+      recipe.body !== undefined && recipe.sender !== undefined && recipe.source !== "detected"
+        ? classifyMessage(recipe.body, recipe.sender)
+        : null;
+
+    const kind: IssueKind = classified ? classified.kind : recipe.detectedKind ?? "unknown";
+
+    // Prefer what the text actually referenced; fall back to what the system already knows
+    // (an SMS maps to a driver by phone number, and a driver has an active route).
+    const routeFromText = classified?.routeCode ? routeByCode[classified.routeCode] : undefined;
+    const routeFromRecipe = recipe.routeCode ? routeByCode[recipe.routeCode] : undefined;
+    const routeFromDriver = driver
+      ? activeRoutes.find((route) => route.driverId === driver.id)
+      : undefined;
+    const route = routeFromText ?? routeFromRecipe ?? routeFromDriver ?? null;
+
+    const deliveryFromText = classified?.consignmentNo
+      ? deliveries.find((d) => d.consignmentNo === classified.consignmentNo)
+      : undefined;
+    const deliveryFromRecipe =
+      recipe.consignmentIndex === undefined ? undefined : deliveries[recipe.consignmentIndex];
+    const delivery = deliveryFromText ?? deliveryFromRecipe ?? null;
+
+    const messages: IssueMessage[] = [];
+    for (const prior of recipe.priorMessages ?? []) {
+      messages.push({
+        at: iso(-prior.minutesAgo),
+        channel: recipe.source === "driver_call" || recipe.source === "customer_call" ? "call" : "sms",
+        from: prior.from,
+        body: prior.body,
+      });
+    }
+    if (recipe.body !== undefined) {
+      const channel: IssueMessage["channel"] =
+        recipe.source === "business_email"
+          ? "email"
+          : recipe.source === "driver_call" || recipe.source === "customer_call"
+            ? "call"
+            : recipe.source === "slack"
+              ? "slack"
+              : "sms";
+      messages.push({
+        at: iso(-recipe.openedMin),
+        channel,
+        from: recipe.sender === "customer" ? "customer" : recipe.sender === "business" ? "business" : "driver",
+        body: recipe.body,
+      });
+    }
+
+    const raisedBy: Issue["raisedBy"] = driver
+      ? { kind: "driver", id: driver.id, name: `${driver.code} · ${driver.name}` }
+      : recipe.source === "detected"
+        ? { kind: "system", id: "dispatch_board", name: recipe.raisedByName ?? "Dispatch board" }
+        : recipe.source === "business_email"
+          ? { kind: "business", id: "shipper", name: recipe.raisedByName ?? "A shipper" }
+          : { kind: "customer", id: delivery?.id ?? "consignee", name: recipe.raisedByName ?? "A consignee" };
+
+    return {
+      id: `iss_${String(i + 1).padStart(3, "0")}`,
+      ref: `ISS-${2040 + i}`,
+      source: recipe.source,
+      kind,
+      openedAt: iso(-recipe.openedMin),
+      raisedBy,
+      routeId: route?.id ?? null,
+      deliveryId: delivery?.id ?? null,
+      messages,
+      answeredAt: recipe.answeredMinAgo === undefined ? null : iso(-recipe.answeredMinAgo),
+      slackThread: recipe.slack
+        ? {
+            channel: recipe.slack.channel,
+            url: `https://slack.example/${recipe.slack.channel.replace("#", "")}`,
+            replies: recipe.slack.replies,
+          }
+        : null,
+    };
+  });
+
   const base: OperationSnapshot = {
     now: nowIso,
+    issues,
+    routes,
     deliveries,
     drivers,
     shippers,
     shift: {
-      detectedProactively: 0,
-      incidentsToday: 0,
-      medianLeadTimeMin: 0,
       // Shift history Radar does not model yet; see README.
-      resolvedToday: 11,
-      falsePositivesToday: 2,
+      resolvedToday: 23,
+      medianFirstReplyMin: 0,
+      answeredFromOneScreen: 19,
+      reopenedToday: 2,
     },
   };
 
-  return { ...base, shift: computeShiftStats(scoreBoard(base), base.shift) };
+  return { ...base, shift: computeShiftStats(triageBoard(base), base.shift) };
 }
